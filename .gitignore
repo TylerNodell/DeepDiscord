@@ -215,4 +215,19 @@ Thumbs.db
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
+
+# Discord Bot specific
+.env
+discord_bot/discord_bot.log
+discord_bot/discord_data/
+discord_bot/*.log
+
+# Training specific
+training/checkpoints/
+training/models/
+training/outputs/
+training/runs/
+training/logs/
+training/wandb/
+training/mlruns/ 
