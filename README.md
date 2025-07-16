@@ -110,9 +110,13 @@ python deepseek_training.py # Start training
 - `!getmsg <id>` - Retrieve message by ID
 - `!responses <id>` - Show responses to message
 - `!chain <id>` - Display conversation chain
+- `!userhistory <@user> [limit]` - Get all messages from a user across the server
 - `!stats` - Bot statistics
 - `!save` - Save data (admin)
+- `!saveuser [@user]` - Save user messages to JSON file (admin)
 - `!clear` - Clear cache (admin)
+- `!yes` - Quick save after user history
+- `!no` - Skip saving after user history
 
 ### Training Capabilities
 - **Model Sizes**: 1.3B (lightweight) and 6.7B (full)

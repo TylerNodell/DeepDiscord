@@ -8,7 +8,8 @@ A powerful Discord bot designed to track, retrieve, and analyze message relation
 - **Message Retrieval**: Get any message by its ID
 - **Response Tracking**: Automatically track who responds to whom
 - **Message Chains**: View complete conversation threads
-- **Real-time Monitoring**: Track messages as they happen
+- **Real-time Monitoring**: Track messages as they happen (excluding bot channels)
+- **Smart Filtering**: Automatically ignores bot commands and bot channels
 - **Data Persistence**: Save and load message data
 
 ### 📊 Commands
@@ -17,11 +18,17 @@ A powerful Discord bot designed to track, retrieve, and analyze message relation
 - `!getmsg <message_id>` - Retrieve a specific message by ID
 - `!responses <message_id>` - Show all responses to a message
 - `!chain <message_id>` - Display the full conversation chain
+- `!userhistory <@user> [limit]` - Get all messages from a user across the server
 - `!stats` - Show bot statistics and usage data
 
 #### Admin Commands
 - `!save` - Save current message data to disk (Admin only)
+- `!saveuser [@user]` - Save all messages from a user to JSON file (Admin only)
 - `!clear` - Clear message cache (Admin only)
+
+#### Interactive Commands
+- `!yes` - Quick save for pending user data (after !userhistory)
+- `!no` - Skip saving pending user data
 
 ## Installation
 
@@ -105,6 +112,27 @@ Shows all messages that replied to the specified message.
 ```
 Displays the original message and all its responses in chronological order.
 
+#### Get User Message History
+```
+!userhistory @username
+!userhistory @username 500
+```
+Searches all channels for messages from a specific user. The optional limit parameter (default: 100) controls how many messages to search per channel.
+
+#### Save User Messages to File
+```
+!saveuser @username
+!saveuser
+```
+Saves all messages from a user to a JSON file (Admin only). Can be used with a user ID/mention or without parameters to save the most recent user history data.
+
+#### Interactive Save (After User History)
+```
+!yes
+!no
+```
+After running `!userhistory`, you can quickly save or skip saving the data by typing `!yes` or `!no`.
+
 #### Check Bot Statistics
 ```
 !stats
@@ -142,13 +170,24 @@ Shows:
 - **Purpose**: Administrative functions
 - **Commands**: `save`, `clear`
 
+### Message Filtering
+
+The bot automatically filters out certain types of messages to focus on meaningful conversations:
+
+- **Bot Commands**: Messages starting with `!` (or other command prefixes) are ignored
+- **Bot Channels**: Messages in channels with names containing: `bot`, `commands`, `admin`, `mod`, `staff`
+- **Bot Messages**: Messages from other bots are always ignored
+
+This ensures the bot only tracks genuine user conversations and interactions.
+
 ### Data Flow
 
 1. **Message Reception**: Bot receives messages via Discord API
-2. **Caching**: Messages are stored in memory cache
-3. **Relationship Tracking**: Response relationships are mapped
-4. **Command Processing**: Users can query cached data
-5. **Persistence**: Data can be saved to disk for backup
+2. **Filtering**: Messages are filtered based on channel type and content
+3. **Caching**: Valid messages are stored in memory cache
+4. **Relationship Tracking**: Response relationships are mapped
+5. **Command Processing**: Users can query cached data
+6. **Persistence**: Data can be saved to disk for backup
 
 ### File Structure
 ```

@@ -35,6 +35,8 @@ class MessageTracker:
         self.message_cache: Dict[int, discord.Message] = {}
         self.response_chain: Dict[int, List[int]] = {}  # message_id -> list of response_ids
         self.max_cache_size = 10000
+        self.user_history_cache: Dict[int, Dict] = {}  # user_id -> history data
+        self.pending_saves: Dict[int, Dict] = {}  # user_id -> pending save data
     
     def add_message(self, message: discord.Message):
         """Add a message to the cache"""
@@ -59,7 +61,12 @@ class MessageTracker:
     def get_responses_to(self, message_id: int) -> List[discord.Message]:
         """Get all responses to a specific message"""
         response_ids = self.response_chain.get(message_id, [])
-        return [self.message_cache.get(rid) for rid in response_ids if self.message_cache.get(rid)]
+        responses = []
+        for rid in response_ids:
+            msg = self.message_cache.get(rid)
+            if msg is not None:
+                responses.append(msg)
+        return responses
     
     def get_message_chain(self, message_id: int) -> List[discord.Message]:
         """Get the full chain of messages (original + responses)"""
@@ -70,6 +77,31 @@ class MessageTracker:
             responses = self.get_responses_to(message_id)
             chain.extend(responses)
         return chain
+    
+    def store_user_history(self, user_id: int, user_data: dict, messages: List[dict]):
+        """Store user history data for later use"""
+        self.user_history_cache[user_id] = {
+            'user_data': user_data,
+            'messages': messages,
+            'timestamp': datetime.utcnow()
+        }
+    
+    def get_user_history(self, user_id: int) -> Optional[Dict]:
+        """Get stored user history data"""
+        return self.user_history_cache.get(user_id)
+    
+    def store_pending_save(self, user_id: int, save_data: dict):
+        """Store data for pending save operation"""
+        self.pending_saves[user_id] = save_data
+    
+    def get_pending_save(self, user_id: int) -> Optional[Dict]:
+        """Get pending save data"""
+        return self.pending_saves.get(user_id)
+    
+    def clear_pending_save(self, user_id: int):
+        """Clear pending save data"""
+        if user_id in self.pending_saves:
+            del self.pending_saves[user_id]
 
 class DeepDiscordBot(commands.Bot):
     """Main Discord bot class for message tracking and retrieval"""
@@ -88,6 +120,7 @@ class DeepDiscordBot(commands.Bot):
         
         self.message_tracker = MessageTracker()
         self.data_dir = "discord_data"
+        self.start_time = datetime.utcnow()
         os.makedirs(self.data_dir, exist_ok=True)
         
         # Load existing data
@@ -105,14 +138,15 @@ class DeepDiscordBot(commands.Bot):
     
     async def on_ready(self):
         """Called when bot is ready"""
-        logger.info(f'Bot logged in as {self.user.name} ({self.user.id})')
+        if self.user:
+            logger.info(f'Bot logged in as {self.user.name} ({self.user.id})')
         logger.info(f'Connected to {len(self.guilds)} guilds')
         
         # Set bot status
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name="messages with !help"
+                name="messages (ignoring bot channels)"
             )
         )
     
@@ -121,6 +155,27 @@ class DeepDiscordBot(commands.Bot):
         # Ignore bot messages
         if message.author.bot:
             return
+        
+        # Ignore bot commands (messages starting with command prefix)
+        # Handle both string and tuple command prefixes
+        if isinstance(self.command_prefix, str):
+            if message.content.startswith(self.command_prefix):
+                # Still process commands but don't track them
+                await self.process_commands(message)
+                return
+        elif isinstance(self.command_prefix, (tuple, list)):
+            if any(message.content.startswith(prefix) for prefix in self.command_prefix):
+                # Still process commands but don't track them
+                await self.process_commands(message)
+                return
+        
+        # Ignore messages in bot channels (only for guild channels)
+        if isinstance(message.channel, discord.TextChannel):
+            channel_name = message.channel.name.lower()
+            bot_channel_keywords = ['bot', 'commands', 'admin', 'mod', 'staff']
+            if any(keyword in channel_name for keyword in bot_channel_keywords):
+                logger.info(f"Ignoring message in bot channel: {message.channel.name}")
+                return
         
         # Track the message
         self.message_tracker.add_message(message)
@@ -384,6 +439,573 @@ class MessageCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error in get_stats: {e}")
             await ctx.send("❌ An error occurred while retrieving statistics.")
+    
+    @commands.command(name='userhistory')
+    async def get_user_history(self, ctx: commands.Context, user_mention_or_id: str, limit: int = 100):
+        """Get all messages from a specific user across the server"""
+        try:
+            logger.info(f"=== USER HISTORY STARTED ===")
+            logger.info(f"Command by: {ctx.author.name} ({ctx.author.id})")
+            logger.info(f"Channel: {getattr(ctx.channel, 'name', 'DM')} ({ctx.channel.id})")
+            logger.info(f"Guild: {ctx.guild.name if ctx.guild else 'DM'} ({ctx.guild.id if ctx.guild else 'N/A'})")
+            logger.info(f"User parameter: {user_mention_or_id}")
+            logger.info(f"Limit: {limit}")
+            
+            # Parse user mention or ID
+            if user_mention_or_id.startswith('<@') and user_mention_or_id.endswith('>'):
+                # Remove <@ and > and any ! if present
+                user_id = int(user_mention_or_id.replace('<@', '').replace('!', '').replace('>', ''))
+                logger.info(f"Parsed user mention to ID: {user_id}")
+            else:
+                try:
+                    user_id = int(user_mention_or_id)
+                    logger.info(f"Parsed user ID: {user_id}")
+                except ValueError:
+                    logger.error(f"Invalid user format: {user_mention_or_id}")
+                    await ctx.send("❌ Invalid user format. Use @username or user ID.")
+                    return
+            
+            # Find the user - try guild members first, then fallback to user object
+            user = None
+            for guild in self.bot.guilds:
+                user = guild.get_member(user_id)
+                if user:
+                    break
+            
+            # If not found as member, try to get user object directly
+            if not user:
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                except discord.NotFound:
+                    await ctx.send("❌ User not found. Please check the user ID or mention.")
+                    return
+                except discord.HTTPException as e:
+                    await ctx.send(f"❌ Error fetching user: {e}")
+                    return
+            
+            # Send initial status message
+            status_msg = await ctx.send(f"🔍 Searching for messages from {user.name}... This may take a while.")
+            
+            all_messages = []
+            channels_searched = 0
+            total_channels = 0
+            
+            # Count total channels first
+            for guild in self.bot.guilds:
+                for channel in guild.channels:
+                    if isinstance(channel, discord.TextChannel):
+                        total_channels += 1
+            
+            # Search through all text channels in all guilds
+            for guild in self.bot.guilds:
+                for channel in guild.channels:
+                    if isinstance(channel, discord.TextChannel):
+                        channels_searched += 1
+                        
+                        # Update status every 5 channels
+                        if channels_searched % 5 == 0:
+                            await status_msg.edit(content=f"🔍 Searching for messages from {user.name}... ({channels_searched}/{total_channels} channels)")
+                        
+                        try:
+                            # Fetch messages from this channel
+                            async for message in channel.history(limit=limit, oldest_first=False):
+                                # Skip bot messages
+                                if message.author.bot:
+                                    continue
+                                # Skip bot commands (messages starting with command prefix)
+                                prefixes = self.bot.command_prefix
+                                if isinstance(prefixes, str):
+                                    if message.content.startswith(prefixes):
+                                        continue
+                                elif isinstance(prefixes, (tuple, list)):
+                                    if any(message.content.startswith(prefix) for prefix in prefixes):
+                                        continue
+                                # Skip messages in bot channels
+                                channel_name = getattr(message.channel, 'name', '').lower()
+                                bot_channel_keywords = ['bot', 'commands', 'admin', 'mod', 'staff']
+                                if any(keyword in channel_name for keyword in bot_channel_keywords):
+                                    continue
+                                # Skip messages in any channel with 'bot' or 'command' in the name
+                                if 'bot' in channel_name or 'command' in channel_name:
+                                    continue
+                                all_messages.append({
+                                    'content': message.content,
+                                    'channel': channel.name,
+                                    'channel_id': channel.id,
+                                    'guild': guild.name,
+                                    'timestamp': message.created_at.isoformat(),
+                                    'message_id': message.id,
+                                    'jump_url': message.jump_url
+                                })
+                                # Add to bot's message tracker
+                                self.bot.message_tracker.add_message(message)
+                        except discord.Forbidden:
+                            # Skip channels we don't have access to
+                            continue
+                        except Exception as e:
+                            logger.warning(f"Error fetching messages from {channel.name}: {e}")
+                            continue
+            
+            # Sort messages by timestamp (newest first)
+            all_messages.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            # Store the data for later use
+            user_data = {
+                'id': user.id,
+                'name': user.name,
+                'display_name': getattr(user, 'display_name', user.name)
+            }
+            self.bot.message_tracker.store_user_history(user_id, user_data, all_messages)
+            
+            # Update status message
+            await status_msg.edit(content=f"✅ Found {len(all_messages)} messages from {user.name} across {channels_searched} channels.")
+            
+            if not all_messages:
+                await ctx.send(f"📭 No messages found from {user.name} in the searchable history.")
+                return
+            
+            # Create embed with results
+            embed = discord.Embed(
+                title=f"Message History for {user.name}",
+                description=f"Found {len(all_messages)} messages across {channels_searched} channels",
+                color=discord.Color.blue(),
+                timestamp=datetime.utcnow()
+            )
+            
+            # Add user info
+            embed.add_field(
+                name="User",
+                value=f"{user.mention} ({user.name})",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="User ID",
+                value=f"`{user.id}`",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="Search Limit",
+                value=f"{limit} messages per channel",
+                inline=True
+            )
+            
+            # Show first 10 messages
+            for i, msg_data in enumerate(all_messages[:10], 1):
+                # Truncate content if too long
+                content = msg_data['content']
+                if len(content) > 100:
+                    content = content[:97] + "..."
+                
+                embed.add_field(
+                    name=f"Message {i}",
+                    value=f"**{msg_data['guild']}** → **#{msg_data['channel']}**\n{content}\n[View Message]({msg_data['jump_url']})",
+                    inline=False
+                )
+            
+            if len(all_messages) > 10:
+                embed.add_field(
+                    name="More Messages",
+                    value=f"... and {len(all_messages) - 10} more messages",
+                    inline=False
+                )
+            
+            embed.set_footer(text=f"Retrieved by {ctx.author.name} | Search completed")
+            
+            await ctx.send(embed=embed)
+            
+            # If there are many messages, offer to save to file
+            if len(all_messages) > 20:
+                # Store save data for pending operation
+                save_data = {
+                    'user_data': user_data,
+                    'messages': all_messages,
+                    'channels_searched': channels_searched
+                }
+                self.bot.message_tracker.store_pending_save(user_id, save_data)
+                
+                save_embed = discord.Embed(
+                    title="Save Messages",
+                    description=f"Found {len(all_messages)} messages from {user.name}. Would you like to save them to a file?",
+                    color=discord.Color.green()
+                )
+                save_embed.add_field(
+                    name="Quick Save",
+                    value="Reply with `yes` to save immediately, or `no` to skip",
+                    inline=False
+                )
+                save_embed.add_field(
+                    name="Manual Save",
+                    value=f"`!saveuser {user_id}` (Admin only)",
+                    inline=False
+                )
+                save_embed.set_footer(text="Data will be kept in memory for 10 minutes")
+                await ctx.send(embed=save_embed)
+                logger.info("Save prompt sent to user")
+            else:
+                logger.info(f"Few messages found ({len(all_messages)}), no save prompt needed")
+            
+            logger.info("=== USER HISTORY COMPLETED SUCCESSFULLY ===")
+            
+        except Exception as e:
+            logger.error(f"=== USER HISTORY FAILED ===")
+            logger.error(f"Error in get_user_history: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            await ctx.send("❌ An error occurred while retrieving user history.")
+    
+    @commands.command(name='saveuser')
+    @commands.has_permissions(administrator=True)
+    async def save_user_messages(self, ctx: commands.Context, user_mention_or_id: Optional[str] = None):
+        """Save all messages from a user to a JSON file (Admin only)"""
+        try:
+            logger.info(f"=== SAVE USER MESSAGES STARTED ===")
+            logger.info(f"Command by: {ctx.author.name} ({ctx.author.id})")
+            logger.info(f"Channel: {getattr(ctx.channel, 'name', 'DM')} ({ctx.channel.id})")
+            logger.info(f"Guild: {ctx.guild.name if ctx.guild else 'DM'} ({ctx.guild.id if ctx.guild else 'N/A'})")
+            logger.info(f"User parameter: {user_mention_or_id}")
+            
+            user_id = None
+            
+            # If no user specified, try to get from pending saves
+            if user_mention_or_id is None:
+                logger.info("No user specified, checking for pending saves...")
+                # Check if there are any pending saves
+                if not self.bot.message_tracker.pending_saves:
+                    logger.warning("No pending saves found")
+                    await ctx.send("❌ No pending saves found. Please specify a user ID or run `!userhistory` first.")
+                    return
+                
+                # Use the most recent pending save
+                user_id = list(self.bot.message_tracker.pending_saves.keys())[-1]
+                logger.info(f"Using pending save for user ID: {user_id}")
+                save_data = self.bot.message_tracker.get_pending_save(user_id)
+                if not save_data:
+                    logger.error(f"No pending save data found for user ID: {user_id}")
+                    await ctx.send("❌ No pending save data found for this user.")
+                    return
+                
+                user_data = save_data['user_data']
+                all_messages = save_data['messages']
+                user_name = user_data['name']
+                logger.info(f"Retrieved cached data for user: {user_name} ({user_id})")
+                logger.info(f"Cached messages count: {len(all_messages)}")
+                
+            else:
+                logger.info("User parameter provided, parsing...")
+                # Parse user mention or ID
+                if user_mention_or_id.startswith('<@') and user_mention_or_id.endswith('>'):
+                    user_id = int(user_mention_or_id.replace('<@', '').replace('!', '').replace('>', ''))
+                    logger.info(f"Parsed user mention to ID: {user_id}")
+                else:
+                    try:
+                        user_id = int(user_mention_or_id)
+                        logger.info(f"Parsed user ID: {user_id}")
+                    except ValueError:
+                        logger.error(f"Invalid user format: {user_mention_or_id}")
+                        await ctx.send("❌ Invalid user format. Use @username or user ID.")
+                        return
+                
+                # Check if we have cached data for this user
+                logger.info(f"Checking for cached data for user ID: {user_id}")
+                cached_data = self.bot.message_tracker.get_user_history(user_id)
+                if cached_data:
+                    logger.info("Found cached data, using it")
+                    user_data = cached_data['user_data']
+                    all_messages = cached_data['messages']
+                    user_name = user_data['name']
+                    logger.info(f"Using cached data for user: {user_name} ({user_id})")
+                    logger.info(f"Cached messages count: {len(all_messages)}")
+                else:
+                    logger.info("No cached data found, fetching from Discord...")
+                    # Fallback to fetching from Discord
+                    user = None
+                    for guild in self.bot.guilds:
+                        user = guild.get_member(user_id)
+                        if user:
+                            logger.info(f"Found user as member in guild: {guild.name}")
+                            break
+                    
+                    if not user:
+                        logger.info("User not found as member, trying to fetch user object...")
+                        try:
+                            user = await self.bot.fetch_user(user_id)
+                            logger.info(f"Successfully fetched user: {user.name}")
+                        except discord.NotFound:
+                            logger.error(f"User not found: {user_id}")
+                            await ctx.send("❌ User not found. Please check the user ID or mention.")
+                            return
+                        except discord.HTTPException as e:
+                            logger.error(f"HTTP error fetching user {user_id}: {e}")
+                            await ctx.send(f"❌ Error fetching user: {e}")
+                            return
+                    
+                    status_msg = await ctx.send(f"💾 Fetching messages from {user.name}...")
+                    logger.info(f"Starting message fetch for user: {user.name} ({user_id})")
+                    
+                    all_messages = []
+                    channels_searched = 0
+                    total_channels = 0
+                    
+                    # Count total channels first
+                    for guild in self.bot.guilds:
+                        for channel in guild.channels:
+                            if isinstance(channel, discord.TextChannel):
+                                total_channels += 1
+                    
+                    logger.info(f"Will search {total_channels} text channels")
+                    
+                    # Search through all text channels
+                    for guild in self.bot.guilds:
+                        logger.info(f"Searching guild: {guild.name}")
+                        for channel in guild.channels:
+                            if isinstance(channel, discord.TextChannel):
+                                channels_searched += 1
+                                logger.info(f"Searching channel {channels_searched}/{total_channels}: {channel.name}")
+                                
+                                try:
+                                    message_count = 0
+                                    async for message in channel.history(limit=None, oldest_first=True):
+                                        if message.author.id == user_id:
+                                            message_count += 1
+                                            all_messages.append({
+                                                'content': message.content,
+                                                'channel_name': channel.name,
+                                                'channel_id': channel.id,
+                                                'guild_name': guild.name,
+                                                'guild_id': guild.id,
+                                                'timestamp': message.created_at.isoformat(),
+                                                'message_id': message.id,
+                                                'jump_url': message.jump_url,
+                                                'attachments': [att.url for att in message.attachments],
+                                                'embeds': len(message.embeds),
+                                                'mentions': [user.id for user in message.mentions],
+                                                'role_mentions': [role.id for role in message.role_mentions]
+                                            })
+                                    
+                                    if message_count > 0:
+                                        logger.info(f"Found {message_count} messages in {channel.name}")
+                                        
+                                except discord.Forbidden:
+                                    logger.warning(f"No permission to read channel: {channel.name}")
+                                    continue
+                                except Exception as e:
+                                    logger.warning(f"Error fetching messages from {channel.name}: {e}")
+                                    continue
+                    
+                    logger.info(f"Completed search. Found {len(all_messages)} total messages across {channels_searched} channels")
+                    
+                    if not all_messages:
+                        logger.warning(f"No messages found for user: {user.name}")
+                        await status_msg.edit(content=f"📭 No messages found from {user.name}.")
+                        return
+                    
+                    user_data = {
+                        'id': user.id,
+                        'name': user.name,
+                        'display_name': getattr(user, 'display_name', user.name)
+                    }
+                    user_name = user.name
+                    logger.info(f"User data prepared: {user_name} ({user_id})")
+            
+            # Create filename
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            filename = f"user_messages_{user_name}_{user_id}_{timestamp}.json"
+            filepath = os.path.join(self.bot.data_dir, filename)
+            logger.info(f"Creating file: {filename}")
+            logger.info(f"File path: {filepath}")
+            
+            # Prepare data structure
+            logger.info("Preparing data structure...")
+            data = {
+                'user_info': user_data,
+                'search_info': {
+                    'searched_at': datetime.utcnow().isoformat(),
+                    'total_messages': len(all_messages),
+                    'guilds_searched': len(self.bot.guilds)
+                },
+                'messages': all_messages
+            }
+            
+            logger.info(f"Data structure prepared:")
+            logger.info(f"  - User info: {user_data}")
+            logger.info(f"  - Total messages: {len(all_messages)}")
+            logger.info(f"  - Guilds searched: {len(self.bot.guilds)}")
+            
+            # Save to JSON file
+            logger.info("Writing data to JSON file...")
+            try:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+                logger.info("JSON file written successfully")
+            except Exception as e:
+                logger.error(f"Error writing JSON file: {e}")
+                raise
+            
+            # Get file size
+            file_size = os.path.getsize(filepath)
+            logger.info(f"File size: {file_size} bytes ({file_size / 1024:.1f} KB)")
+            
+            # Create file object for Discord
+            logger.info("Creating Discord file object...")
+            try:
+                with open(filepath, 'rb') as f:
+                    file_obj = discord.File(f, filename=filename)
+                logger.info("Discord file object created successfully")
+            except Exception as e:
+                logger.error(f"Error creating Discord file object: {e}")
+                raise
+            
+            # Create embed
+            logger.info("Creating success embed...")
+            embed = discord.Embed(
+                title="User Messages Saved",
+                description=f"Successfully saved {len(all_messages)} messages from {user_name}",
+                color=discord.Color.green(),
+                timestamp=datetime.utcnow()
+            )
+            
+            embed.add_field(
+                name="File",
+                value=filename,
+                inline=True
+            )
+            
+            embed.add_field(
+                name="Messages",
+                value=f"{len(all_messages):,}",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="Size",
+                value=f"{os.path.getsize(filepath) / 1024:.1f} KB",
+                inline=True
+            )
+            
+            # Send embed and file
+            logger.info("Sending embed and file to Discord...")
+            await ctx.send(embed=embed)
+            await ctx.send(file=file_obj)
+            logger.info("Embed and file sent successfully")
+            
+            # Clear pending save data
+            logger.info(f"Clearing pending save data for user: {user_id}")
+            self.bot.message_tracker.clear_pending_save(user_id)
+            
+            logger.info("=== SAVE USER MESSAGES COMPLETED SUCCESSFULLY ===")
+            
+        except Exception as e:
+            logger.error(f"=== SAVE USER MESSAGES FAILED ===")
+            logger.error(f"Error in save_user_messages: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error details: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            await ctx.send("❌ An error occurred while saving user messages.")
+    
+    @commands.command(name='yes')
+    async def quick_save(self, ctx: commands.Context):
+        """Quick save for pending user data"""
+        try:
+            logger.info(f"=== QUICK SAVE STARTED ===")
+            logger.info(f"Command by: {ctx.author.name} ({ctx.author.id})")
+            
+            if not self.bot.message_tracker.pending_saves:
+                logger.warning("No pending saves found for quick save")
+                await ctx.send("❌ No pending saves found. Run `!userhistory` first.")
+                return
+            
+            # Get the most recent pending save
+            user_id = list(self.bot.message_tracker.pending_saves.keys())[-1]
+            logger.info(f"Using pending save for user ID: {user_id}")
+            save_data = self.bot.message_tracker.get_pending_save(user_id)
+            
+            if not save_data:
+                logger.error(f"No pending save data found for user ID: {user_id}")
+                await ctx.send("❌ No pending save data found.")
+                return
+            
+            logger.info(f"Found pending save data with {len(save_data['messages'])} messages")
+            
+            # Call the save function with the cached data
+            logger.info("Calling save_user_messages with cached data...")
+            await self.save_user_messages(ctx)
+            
+            logger.info("=== QUICK SAVE COMPLETED ===")
+            
+        except Exception as e:
+            logger.error(f"=== QUICK SAVE FAILED ===")
+            logger.error(f"Error in quick_save: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            await ctx.send("❌ An error occurred during quick save.")
+    
+    @commands.command(name='no')
+    async def skip_save(self, ctx: commands.Context):
+        """Skip saving pending user data"""
+        try:
+            logger.info(f"=== SKIP SAVE STARTED ===")
+            logger.info(f"Command by: {ctx.author.name} ({ctx.author.id})")
+            
+            if not self.bot.message_tracker.pending_saves:
+                logger.warning("No pending saves found for skip save")
+                await ctx.send("❌ No pending saves found.")
+                return
+            
+            # Get the most recent pending save
+            user_id = list(self.bot.message_tracker.pending_saves.keys())[-1]
+            logger.info(f"Using pending save for user ID: {user_id}")
+            save_data = self.bot.message_tracker.get_pending_save(user_id)
+            
+            if not save_data:
+                logger.error(f"No pending save data found for user ID: {user_id}")
+                await ctx.send("❌ No pending save data found.")
+                return
+            
+            user_name = save_data['user_data']['name']
+            message_count = len(save_data['messages'])
+            logger.info(f"Skipping save for user: {user_name} ({user_id}) with {message_count} messages")
+            
+            # Clear the pending save
+            logger.info(f"Clearing pending save data for user: {user_id}")
+            self.bot.message_tracker.clear_pending_save(user_id)
+            
+            embed = discord.Embed(
+                title="Save Skipped",
+                description=f"Skipped saving messages from {user_name}",
+                color=discord.Color.orange(),
+                timestamp=datetime.utcnow()
+            )
+            
+            embed.add_field(
+                name="Messages",
+                value=f"{message_count:,} messages not saved",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="Data",
+                value="Cleared from memory",
+                inline=True
+            )
+            
+            logger.info("Sending skip confirmation embed...")
+            await ctx.send(embed=embed)
+            logger.info("Skip confirmation sent successfully")
+            
+            logger.info("=== SKIP SAVE COMPLETED ===")
+            
+        except Exception as e:
+            logger.error(f"=== SKIP SAVE FAILED ===")
+            logger.error(f"Error in skip_save: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            await ctx.send("❌ An error occurred while skipping save.")
 
 class AdminCommands(commands.Cog):
     """Administrative commands"""
