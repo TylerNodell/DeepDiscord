@@ -147,7 +147,7 @@ class DeepDiscordBot(commands.Bot):
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
                 name="messages (ignoring bot channels)"
-            )
+                )
         )
     
     async def on_message(self, message: discord.Message):
@@ -509,6 +509,9 @@ class MessageCommands(commands.Cog):
                         try:
                             # Fetch messages from this channel
                             async for message in channel.history(limit=limit, oldest_first=False):
+                                # Only include messages from the specified user
+                                if message.author.id != user_id:
+                                    continue
                                 # Skip bot messages
                                 if message.author.bot:
                                     continue
