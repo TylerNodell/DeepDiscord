@@ -1,0 +1,18 @@
+{
+  "user_info": {
+    "id": 97544083005771776,
+    "name": "bignuko",
+    "display_name": "Noodle"
+  },
+  "search_info": {
+    "searched_at": "2025-07-16T21:12:42.418506",
+    "total_messages": 86,
+    "guilds_searched": 1
+  },
+  "messages": [
+    {
+      "content": "!userhistory 97544083005771776",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": 

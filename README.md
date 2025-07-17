@@ -1,53 +1,41 @@
 # DeepDiscord
 
-A comprehensive AI-powered Discord analysis and training platform that combines real-time message tracking with DeepSeek AI model training.
+An AI-powered Discord analysis platform for real-time message tracking and conversation analysis.
 
 ## 🏗️ Project Structure
 
 ```
 DeepDiscord/
-├── discord_bot/           # Discord bot for message tracking
-│   ├── discord_bot.py     # Main bot implementation
-│   ├── requirements_discord.txt
-│   ├── env_example.txt    # Environment configuration
-│   ├── README_DISCORD.md  # Bot documentation
-│   └── test_discord_bot.py
-├── training/              # DeepSeek AI training module
-│   ├── deepseek_setup.py  # Model initialization
-│   ├── deepseek_training.py # Training pipeline
-│   ├── requirements_training.txt
-│   └── README_TRAINING.md
-├── venv/                  # Python virtual environment
-├── .gitignore            # Git ignore rules
-└── README.md             # This file
+├── discord_bot.py         # Main bot implementation
+├── requirements.txt       # Python dependencies
+├── .env                  # Environment configuration (create from env_example.txt)
+├── env_example.txt       # Environment template
+├── README_DISCORD.md     # Bot documentation
+├── test_discord_bot.py   # Bot testing
+├── discord_bot.log       # Bot logs
+├── discord_data/         # Data storage directory
+├── venv/                 # Python virtual environment
+├── .gitignore           # Git ignore rules
+└── README.md            # This file
 ```
 
 ## 🎯 Overview
 
-DeepDiscord consists of two main components:
+DeepDiscord is a Discord bot designed for real-time message tracking and analysis:
 
-### 1. Discord Bot (`discord_bot/`)
-- **Purpose**: Real-time message tracking and analysis
-- **Features**:
-  - Message retrieval by ID
-  - Response relationship tracking
-  - Conversation chain analysis
-  - Data collection for AI training
-
-### 2. Training Module (`training/`)
-- **Purpose**: DeepSeek AI model training and fine-tuning
-- **Features**:
-  - Model setup and initialization
-  - Fine-tuning pipeline
-  - Hardware optimization (M4 Mac, RTX 5080)
-  - Text generation capabilities
+### Discord Bot Features
+- **Message Retrieval**: Get messages by ID
+- **Response Tracking**: Track response relationships
+- **Conversation Analysis**: Analyze conversation chains
+- **User History**: Get all messages from specific users
+- **Data Collection**: Collect and save conversation data
+- **Admin Controls**: Secure admin-only operations
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.8+
-- Discord bot token
-- Sufficient hardware for AI training
+- Python 3.8 Discord bot token
+- Discord server with bot permissions
 
 ### Installation
 
@@ -63,23 +51,15 @@ DeepDiscord consists of two main components:
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
-3. **Install Discord bot dependencies**:
+3. **Install dependencies**:
    ```bash
-   cd discord_bot
-   pip install -r requirements_discord.txt
-   ```
-
-4. **Install training dependencies**:
-   ```bash
-   cd ../training
-   pip install -r requirements_training.txt
+   pip install -r requirements.txt
    ```
 
 ### Configuration
 
 1. **Set up Discord bot**:
    ```bash
-   cd discord_bot
    cp env_example.txt .env
    # Edit .env with your Discord bot token
    ```
@@ -93,43 +73,30 @@ DeepDiscord consists of two main components:
 
 #### Start Discord Bot
 ```bash
-cd discord_bot
 python discord_bot.py
 ```
 
-#### Train AI Model
-```bash
-cd training
-python deepseek_setup.py    # Initialize model
-python deepseek_training.py # Start training
-```
+## 🔧 Bot Commands
 
-## 🔧 Features
-
-### Discord Bot Commands
+### User Commands
 - `!getmsg <id>` - Retrieve message by ID
 - `!responses <id>` - Show responses to message
 - `!chain <id>` - Display conversation chain
 - `!userhistory <@user> [limit]` - Get all messages from a user across the server
 - `!stats` - Bot statistics
-- `!save` - Save data (admin)
-- `!saveuser [@user]` - Save user messages to JSON file (admin)
-- `!clear` - Clear cache (admin)
+
+### Admin Commands
+- `!save` - Save data (admin only)
+- `!saveuser [@user]` - Save user messages to JSON file (admin only)
+- `!clear` - Clear cache (admin only)
 - `!yes` - Quick save after user history
 - `!no` - Skip saving after user history
 
-### Training Capabilities
-- **Model Sizes**: 1.3B (lightweight) and 6.7B (full)
-- **Hardware Support**: CUDA, MPS (Apple Silicon), CPU
-- **Memory Optimization**: Gradient checkpointing, mixed precision
-- **Data Integration**: Works with Discord bot data
-
 ## 🎯 Use Cases
-
-1. **Conversation Analysis**: Track and analyze Discord conversations
-2. **AI Training**: Use Discord data to train conversational AI
-3. **Response Prediction**: Predict likely responses in conversations
-4. **Community Insights**: Understand community interaction patterns
+1versation Analysis**: Track and analyze Discord conversations
+2. **Response Tracking**: Understand how conversations flow
+3**User Behavior**: Analyze user interaction patterns
+4. **Data Collection**: Gather conversation data for analysis
 
 ## 🔒 Privacy & Security
 
@@ -140,8 +107,7 @@ python deepseek_training.py # Start training
 
 ## 📚 Documentation
 
-- [Discord Bot Documentation](discord_bot/README_DISCORD.md)
-- [Training Module Documentation](training/README_TRAINING.md)
+- [Discord Bot Documentation](README_DISCORD.md)
 
 ## 🤝 Contributing
 
@@ -158,6 +124,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🆘 Support
 
 For issues and questions:
-1. Check the relevant module documentation
-2. Review logs in `discord_bot/discord_bot.log`
-3. Create an issue in the project repository
+1Check the [Discord Bot Documentation](README_DISCORD.md)2. Review logs in `discord_bot.log`
+3Create an issue in the project repository

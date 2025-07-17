@@ -1,0 +1,842 @@
+{
+  "user_info": {
+    "id": 97544083005771776,
+    "name": "bignuko",
+    "display_name": "Noodle"
+  },
+  "search_info": {
+    "searched_at": "2025-07-16T21:24:36.733131",
+    "total_messages": 92,
+    "guilds_searched": 1
+  },
+  "messages": [
+    {
+      "content": "!userhistory 97544083005771776",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T21:23:48.198000+00:00",
+      "message_id": 1395153974373384262,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395153974373384262"
+    },
+    {
+      "content": "!yes",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T21:15:07.617000+00:00",
+      "message_id": 1395151790898417807,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395151790898417807"
+    },
+    {
+      "content": "!userhistory 97544083005771776",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T21:14:49.357000+00:00",
+      "message_id": 1395151714310426635,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395151714310426635"
+    },
+    {
+      "content": "!yes",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T21:12:42.314000+00:00",
+      "message_id": 1395151181453463632,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395151181453463632"
+    },
+    {
+      "content": "yes",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T21:12:21.488000+00:00",
+      "message_id": 1395151094103150623,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395151094103150623"
+    },
+    {
+      "content": "yes",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T21:12:11.995000+00:00",
+      "message_id": 1395151054286356621,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395151054286356621"
+    },
+    {
+      "content": "!userhistory 97544083005771776",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T21:11:54.131000+00:00",
+      "message_id": 1395150979359445142,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395150979359445142"
+    },
+    {
+      "content": "!saveuser 97544083005771776",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T21:00:29.839000+00:00",
+      "message_id": 1395148109230772345,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395148109230772345"
+    },
+    {
+      "content": "!saveuser 97544083005771776",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T20:59:34.663000+00:00",
+      "message_id": 1395147877805850665,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395147877805850665"
+    },
+    {
+      "content": "!userhistory 97544083005771776",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T20:59:00.276000+00:00",
+      "message_id": 1395147733576450108,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395147733576450108"
+    },
+    {
+      "content": "!userhistory 97544083005771776",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T20:56:23.319000+00:00",
+      "message_id": 1395147075250946208,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395147075250946208"
+    },
+    {
+      "content": "!help",
+      "channel": "bot-testing",
+      "channel_id": 1395146494159360090,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-16T20:54:17.847000+00:00",
+      "message_id": 1395146548983103539,
+      "jump_url": "https://discord.com/channels/509533588954546187/1395146494159360090/1395146548983103539"
+    },
+    {
+      "content": "",
+      "channel": "cosplay",
+      "channel_id": 803363857518297098,
+      "guild": "Ramen House",
+      "timestamp": "2025-07-04T22:26:39.170000+00:00",
+      "message_id": 1390821136589262868,
+      "jump_url": "https://discord.com/channels/509533588954546187/803363857518297098/1390821136589262868"
+    },
+    {
+      "content": "Fair we've all been chilling taking a break. I'll let you know if <@233342963315507204> and or emme want to get a late clear",
+      "channel": "static",
+      "channel_id": 858567065035603978,
+      "guild": "Ramen House",
+      "timestamp": "2025-06-03T16:20:54.886000+00:00",
+      "message_id": 1379495071757373530,
+      "jump_url": "https://discord.com/channels/509533588954546187/858567065035603978/1379495071757373530"
+    },
+    {
+      "content": "Sorry haven't played in a while missed the tier.",
+      "channel": "static",
+      "channel_id": 858567065035603978,
+      "guild": "Ramen House",
+      "timestamp": "2025-04-25T06:16:54.023000+00:00",
+      "message_id": 1365209939802329089,
+      "jump_url": "https://discord.com/channels/509533588954546187/858567065035603978/1365209939802329089"
+    },
+    {
+      "content": "",
+      "channel": "the-salt-mines",
+      "channel_id": 1333121744092922029,
+      "guild": "Ramen House",
+      "timestamp": "2025-02-20T08:15:27.049000+00:00",
+      "message_id": 1342046950597595148,
+      "jump_url": "https://discord.com/channels/509533588954546187/1333121744092922029/1342046950597595148"
+    },
+    {
+      "content": "Late happy new year",
+      "channel": "static",
+      "channel_id": 858567065035603978,
+      "guild": "Ramen House",
+      "timestamp": "2025-01-01T21:49:16.724000+00:00",
+      "message_id": 1324132363818504265,
+      "jump_url": "https://discord.com/channels/509533588954546187/858567065035603978/1324132363818504265"
+    },
+    {
+      "content": "<@772814406496026635> huge grats on the clear",
+      "channel": "static",
+      "channel_id": 858567065035603978,
+      "guild": "Ramen House",
+      "timestamp": "2024-11-29T13:35:31.700000+00:00",
+      "message_id": 1312049307897299056,
+      "jump_url": "https://discord.com/channels/509533588954546187/858567065035603978/1312049307897299056"
+    },
+    {
+      "content": "Imo it's no different from any other con. It's cumbersome but not a problem if your expecting the problems that come with a large prop",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-28T00:33:13.915000+00:00",
+      "message_id": 1266916341223391262,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1266916341223391262"
+    },
+    {
+      "content": "sounds good we'll probably just get them from you when we come to new york",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-19T16:23:50.884000+00:00",
+      "message_id": 1263894080820088944,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1263894080820088944"
+    },
+    {
+      "content": "I cant remember who was the one who bought the pack",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-17T03:37:01.595000+00:00",
+      "message_id": 1262976328144257064,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1262976328144257064"
+    },
+    {
+      "content": "its jake who bought the tickets right?",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-17T03:36:53.181000+00:00",
+      "message_id": 1262976292853125235,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1262976292853125235"
+    },
+    {
+      "content": "havent heard anything yet",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-17T03:35:06.344000+00:00",
+      "message_id": 1262975844746395671,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1262975844746395671"
+    },
+    {
+      "content": "We are doing genshin though not giving up on it, weve invested waaaaaaay too much money and time to quit on it now",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-08T18:13:59.652000+00:00",
+      "message_id": 1259935533480546489,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1259935533480546489"
+    },
+    {
+      "content": "yeah threse no way emme and I are getting our genshin done before they next con season, its such an enourmous project",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-08T18:13:17.518000+00:00",
+      "message_id": 1259935356757741729,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1259935356757741729"
+    },
+    {
+      "content": "that jacket would be several hundreds to over a thousand in leather cost alone",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-02T21:17:41.341000+00:00",
+      "message_id": 1257807434601332747,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1257807434601332747"
+    },
+    {
+      "content": "I mean its definitely going to be fake leather",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-02T21:17:17.062000+00:00",
+      "message_id": 1257807332767698974,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1257807332767698974"
+    },
+    {
+      "content": "Especially the custom leatherwork. I wouldn't even attempt it myself until I did simpler leatherwork",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-02T18:23:26.929000+00:00",
+      "message_id": 1257763585619132428,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1257763585619132428"
+    },
+    {
+      "content": "If you're trying to be faithful",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-02T18:23:03.398000+00:00",
+      "message_id": 1257763486923231294,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1257763486923231294"
+    },
+    {
+      "content": "Viper is a very advanced cosplay to make",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-07-02T18:22:46.940000+00:00",
+      "message_id": 1257763417893241043,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1257763417893241043"
+    },
+    {
+      "content": "gonna hop in the boys chat if you wanna talk there gonna start trying to deconstruct these models",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-01-26T02:31:41.352000+00:00",
+      "message_id": 1200266784704573451,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1200266784704573451"
+    },
+    {
+      "content": "not sure who came up with the idea of rampant sexual harrassment",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-01-26T02:27:32.170000+00:00",
+      "message_id": 1200265739559510056,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1200265739559510056"
+    },
+    {
+      "content": "Yeah those got the axe pretty quick",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-01-26T02:27:19.007000+00:00",
+      "message_id": 1200265684349898783,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1200265684349898783"
+    },
+    {
+      "content": "Really taking the axis powers in Hetalia: Axis Powers seriously",
+      "channel": "the-crew",
+      "channel_id": 1197322729343426592,
+      "guild": "Ramen House",
+      "timestamp": "2024-01-26T02:24:34.947000+00:00",
+      "message_id": 1200264996232376453,
+      "jump_url": "https://discord.com/channels/509533588954546187/1197322729343426592/1200264996232376453"
+    },
+    {
+      "content": "",
+      "channel": "fashion",
+      "channel_id": 909287120458362880,
+      "guild": "Ramen House",
+      "timestamp": "2023-07-17T03:29:11.098000+00:00",
+      "message_id": 1130340395927208066,
+      "jump_url": "https://discord.com/channels/509533588954546187/909287120458362880/1130340395927208066"
+    },
+    {
+      "content": "",
+      "channel": "fashion",
+      "channel_id": 909287120458362880,
+      "guild": "Ramen House",
+      "timestamp": "2023-07-17T03:28:40.003000+00:00",
+      "message_id": 1130340265505333288,
+      "jump_url": "https://discord.com/channels/509533588954546187/909287120458362880/1130340265505333288"
+    },
+    {
+      "content": "https://www.net-a-porter.com/en-us/shop/product/gucci/bags/cross-body/kawaii-ophidia-mini-printed-leather-shoulder-bag/1647597311005260",
+      "channel": "fashion",
+      "channel_id": 909287120458362880,
+      "guild": "Ramen House",
+      "timestamp": "2023-07-17T03:28:21.357000+00:00",
+      "message_id": 1130340187298336801,
+      "jump_url": "https://discord.com/channels/509533588954546187/909287120458362880/1130340187298336801"
+    },
+    {
+      "content": "Server is: ramenhouse.mcserver.us",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2023-02-22T20:21:58.776000+00:00",
+      "message_id": 1078049033530114148,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/1078049033530114148"
+    },
+    {
+      "content": "https://polymc.org/",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2023-02-22T20:14:40.287000+00:00",
+      "message_id": 1078047194373967953,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/1078047194373967953"
+    },
+    {
+      "content": "Link to PolyMC",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2023-02-22T20:14:39.794000+00:00",
+      "message_id": 1078047192306159692,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/1078047192306159692"
+    },
+    {
+      "content": "https://drive.google.com/file/d/1vn5VpPTJooNup1I71xRGNxnlhQsjZ6OS/view?usp=sharing",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2023-02-22T20:09:57.282000+00:00",
+      "message_id": 1078046007364956262,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/1078046007364956262"
+    },
+    {
+      "content": "download PolyMC and use this zip to build your instance",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2023-02-22T20:09:56.228000+00:00",
+      "message_id": 1078046002944159864,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/1078046002944159864"
+    },
+    {
+      "content": "@here if anyone wants to play minecraft with us we have a server.",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2023-02-22T20:09:39.212000+00:00",
+      "message_id": 1078045931573887076,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/1078045931573887076"
+    },
+    {
+      "content": "Prospective Cons:\nMomoCon - Atlanta, GA - May 25-28th - 35k attendance\nAnime North - Toronto, Canada - May 26-28th - 35k attendance - closer to us in ny\nA-Kon - Irving, TX - June 2-4th - 40k attendance",
+      "channel": "con-schedule",
+      "channel_id": 1042542252125323426,
+      "guild": "Ramen House",
+      "timestamp": "2022-11-16T21:00:52.066000+00:00",
+      "message_id": 1042544809228906596,
+      "jump_url": "https://discord.com/channels/509533588954546187/1042542252125323426/1042544809228906596"
+    },
+    {
+      "content": "Guaranteed 2023 Cons:\nAnimeExpo - Los Angeles, CA - July 1-4th - Tyler/Emme/Steven/Ilona/Nancy/Jerson\nOtakon - Washington DC - July 20-30th - Tyler/Emme?\nAnimeNYC - New York City, NY - ? (In November) -Tyler/Emme",
+      "channel": "con-schedule",
+      "channel_id": 1042542252125323426,
+      "guild": "Ramen House",
+      "timestamp": "2022-11-16T20:54:35.835000+00:00",
+      "message_id": 1042543231201722399,
+      "jump_url": "https://discord.com/channels/509533588954546187/1042542252125323426/1042543231201722399"
+    },
+    {
+      "content": ";;join",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-10-26T03:39:18.128000+00:00",
+      "message_id": 1034672545477165078,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/1034672545477165078"
+    },
+    {
+      "content": ";;vol",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-07T01:16:34.507000+00:00",
+      "message_id": 961434278196047922,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/961434278196047922"
+    },
+    {
+      "content": ";;play thunderous",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T21:11:30.235000+00:00",
+      "message_id": 960647828277960754,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960647828277960754"
+    },
+    {
+      "content": "::play thunderous",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T21:11:24.640000+00:00",
+      "message_id": 960647804810850355,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960647804810850355"
+    },
+    {
+      "content": ";;play dj got us falling in",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T21:03:21.537000+00:00",
+      "message_id": 960645778530000936,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960645778530000936"
+    },
+    {
+      "content": ";;play revenge",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T20:54:22.257000+00:00",
+      "message_id": 960643516625727498,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960643516625727498"
+    },
+    {
+      "content": ";;play fallen kngdom",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T20:52:16.137000+00:00",
+      "message_id": 960642987640111214,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960642987640111214"
+    },
+    {
+      "content": ";;play un village",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T20:46:57.434000+00:00",
+      "message_id": 960641650902859877,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960641650902859877"
+    },
+    {
+      "content": ";;vol",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T20:43:15.216000+00:00",
+      "message_id": 960640718853001297,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960640718853001297"
+    },
+    {
+      "content": ";;play fancy twice",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T20:42:45.049000+00:00",
+      "message_id": 960640592323428442,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960640592323428442"
+    },
+    {
+      "content": ";;join",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T20:42:34.221000+00:00",
+      "message_id": 960640546907516928,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960640546907516928"
+    },
+    {
+      "content": ";;join",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T20:41:57.704000+00:00",
+      "message_id": 960640393744117831,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960640393744117831"
+    },
+    {
+      "content": ";;join",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2022-04-04T20:40:50.891000+00:00",
+      "message_id": 960640113510080522,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/960640113510080522"
+    },
+    {
+      "content": "diamond shortage has been solved",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2021-11-02T16:47:56.523000+00:00",
+      "message_id": 905136157325680682,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/905136157325680682"
+    },
+    {
+      "content": "let me know if you need help",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2021-11-02T16:27:31.098000+00:00",
+      "message_id": 905131017520709682,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/905131017520709682"
+    },
+    {
+      "content": "go to the java tab in settings and allocate around 8gig of ram",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2021-11-01T00:48:01.934000+00:00",
+      "message_id": 904532200245043241,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/904532200245043241"
+    },
+    {
+      "content": "",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2021-11-01T00:47:42.314000+00:00",
+      "message_id": 904532117952794694,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/904532117952794694"
+    },
+    {
+      "content": "sorry we got distracted",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2021-11-01T00:47:13.605000+00:00",
+      "message_id": 904531997538545694,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/904531997538545694"
+    },
+    {
+      "content": "so check how much ram you have on your pc",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2021-11-01T00:04:38.697000+00:00",
+      "message_id": 904521281477701662,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/904521281477701662"
+    },
+    {
+      "content": "ok you havent allocated enough ram",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2021-11-01T00:04:26.393000+00:00",
+      "message_id": 904521229870956564,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/904521229870956564"
+    },
+    {
+      "content": "Yes",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2021-10-31T23:43:39.617000+00:00",
+      "message_id": 904516000513421322,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/904516000513421322"
+    },
+    {
+      "content": "Any minecraft discussion goes here",
+      "channel": "minecraft",
+      "channel_id": 904515780996124694,
+      "guild": "Ramen House",
+      "timestamp": "2021-10-31T23:43:04.243000+00:00",
+      "message_id": 904515852144115732,
+      "jump_url": "https://discord.com/channels/509533588954546187/904515780996124694/904515852144115732"
+    },
+    {
+      "content": "!signup_options",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2021-06-27T23:46:24.004000+00:00",
+      "message_id": 858855818936844308,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/858855818936844308"
+    },
+    {
+      "content": "!signup_options",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2021-06-27T23:45:52.320000+00:00",
+      "message_id": 858855686044647424,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/858855686044647424"
+    },
+    {
+      "content": "!create",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2021-06-27T23:42:29.110000+00:00",
+      "message_id": 858854833721573397,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/858854833721573397"
+    },
+    {
+      "content": "!create",
+      "channel": "bot-chat",
+      "channel_id": 609934129412177936,
+      "guild": "Ramen House",
+      "timestamp": "2021-06-27T23:40:35.559000+00:00",
+      "message_id": 858854357453504573,
+      "jump_url": "https://discord.com/channels/509533588954546187/609934129412177936/858854357453504573"
+    },
+    {
+      "content": "any email",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-04-06T19:51:46.652000+00:00",
+      "message_id": 696809398319710289,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/696809398319710289"
+    },
+    {
+      "content": "setting up a notion board for project management",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-04-06T19:51:33.667000+00:00",
+      "message_id": 696809343856672849,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/696809343856672849"
+    },
+    {
+      "content": "send me you're emails",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-04-06T19:51:25.459000+00:00",
+      "message_id": 696809309430087751,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/696809309430087751"
+    },
+    {
+      "content": "<@&689719112758460495> sorry we havent worked on anything in a while, were gonna start getting into the full swing of things tomorrow.",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-04-06T19:48:55.129000+00:00",
+      "message_id": 696808678900236299,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/696808678900236299"
+    },
+    {
+      "content": "when do you guys wanna get on?",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-25T16:58:14.749000+00:00",
+      "message_id": 692417073246109806,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/692417073246109806"
+    },
+    {
+      "content": "gotta finish those C# courses",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-25T16:58:09.912000+00:00",
+      "message_id": 692417052958523482,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/692417052958523482"
+    },
+    {
+      "content": "<@!233342963315507204> <@!426890478999306243> weve gotten side tracked",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-25T16:58:02.582000+00:00",
+      "message_id": 692417022214144030,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/692417022214144030"
+    },
+    {
+      "content": "<@!233342963315507204> <@!426890478999306243> Sorry I was completely out of it yestday, slept the whole day. We'll continue the C# course sometime today",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-20T16:41:15.459000+00:00",
+      "message_id": 690600858705985656,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/690600858705985656"
+    },
+    {
+      "content": "nerd",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T18:52:32.554000+00:00",
+      "message_id": 689909121906245778,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689909121906245778"
+    },
+    {
+      "content": "<@!233342963315507204> get in here",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T18:52:31.179000+00:00",
+      "message_id": 689909116138684494,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689909116138684494"
+    },
+    {
+      "content": "its time to review C#",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T18:47:33.316000+00:00",
+      "message_id": 689907866810712115,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689907866810712115"
+    },
+    {
+      "content": "<@!426890478999306243> <@!233342963315507204> emmes done",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T18:47:27.956000+00:00",
+      "message_id": 689907844329242848,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689907844329242848"
+    },
+    {
+      "content": "while im waiting for emme to get done I'm setting up our repo.",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T18:16:38.810000+00:00",
+      "message_id": 689900088449171500,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689900088449171500"
+    },
+    {
+      "content": "Give me your github usernames",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T18:16:12.571000+00:00",
+      "message_id": 689899978394828864,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689899978394828864"
+    },
+    {
+      "content": "They are still setting shit up lol this is gonna take a while",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T18:01:05.845000+00:00",
+      "message_id": 689896175310340146,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689896175310340146"
+    },
+    {
+      "content": "we can start up whenever",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T16:28:43.237000+00:00",
+      "message_id": 689872927927435271,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689872927927435271"
+    },
+    {
+      "content": "<@!426890478999306243> I was up late sorry",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T16:28:36.428000+00:00",
+      "message_id": 689872899368157333,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689872899368157333"
+    },
+    {
+      "content": "https://github.com/FNA-XNA/FNA/wiki/1:-Download-and-Update-FNA",
+      "channel": "dev-resources",
+      "channel_id": 689719913979707475,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T10:12:21.782000+00:00",
+      "message_id": 689778214440271891,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719913979707475/689778214440271891"
+    },
+    {
+      "content": "<@&689719112758460495> Lets build a video game",
+      "channel": "dev-chat",
+      "channel_id": 689719660442419212,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T06:25:49.994000+00:00",
+      "message_id": 689721206349496376,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719660442419212/689721206349496376"
+    },
+    {
+      "content": "FNA Tutorials <@!426890478999306243> <@!233342963315507204>",
+      "channel": "dev-resources",
+      "channel_id": 689719913979707475,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T06:22:41.873000+00:00",
+      "message_id": 689720417312833551,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719913979707475/689720417312833551"
+    },
+    {
+      "content": "https://gist.github.com/flibitijibibo/1ce4b7899b3cf1805a420330f0d2faf3",
+      "channel": "dev-resources",
+      "channel_id": 689719913979707475,
+      "guild": "Ramen House",
+      "timestamp": "2020-03-18T06:22:29.499000+00:00",
+      "message_id": 689720365412646926,
+      "jump_url": "https://discord.com/channels/509533588954546187/689719913979707475/689720365412646926"
+    }
+  ]
+}
