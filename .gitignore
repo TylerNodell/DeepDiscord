@@ -236,4 +236,13 @@ training/mlruns/
 results/
 
 # Training data
-training_data/ 
+training_data/
+
+# User consent data (privacy protection)
+discord_data/user_consents.json
+
+# User authorization data (security protection)
+discord_data/authorized_users.json
+
+# Channel restriction data (configuration protection)
+discord_data/allowed_channels.json 

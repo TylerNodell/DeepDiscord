@@ -81,7 +81,7 @@ DISCORD_TOKEN=your_discord_bot_token_here
 TEST_USER_ID=123456789012345678
 
 # Optional
-BOT_PREFIX=!
+BOT_PREFIX=!!
 LOG_LEVEL=INFO
 ```
 
@@ -114,21 +114,25 @@ python tools/training_data_generator.py
 
 ### Bot Commands
 ```bash
-!userhistory @user                    # Analyze user's message patterns
-!fragment @user                       # Show fragment detection results  
-!relationships @user                  # Show message relationships
-!generatetrainingdata <user_id> [days] # Generate training data files for specific user
+!!userhistory @user                    # Analyze user's message patterns
+!!fragment @user                       # Show fragment detection results  
+!!relationships @user                  # Show message relationships
+!!generatetrainingdata <user_id> [days] # Generate training data files for specific user
+!!consent                              # Check your consent status
+!!consent status [@user]               # Check consent status (self or others)
+!!consent grant @user                  # Grant consent to someone
+!!consent revoke                       # Revoke your consent
 ```
 
 #### Training Data Generation
-The `!generatetrainingdata` command creates question/answer training pairs from Discord conversations:
+The `!!generatetrainingdata` command creates question/answer training pairs from Discord conversations:
 
 ```bash
 # Generate training data for user (30 days default)
-!generatetrainingdata 123456789012345678
+!!generatetrainingdata 123456789012345678
 
 # Generate training data for user (60 days back)
-!generatetrainingdata 123456789012345678 60
+!!generatetrainingdata 123456789012345678 60
 ```
 
 **Features:**
@@ -137,6 +141,38 @@ The `!generatetrainingdata` command creates question/answer training pairs from 
 - **Real-time status updates**: Shows progress with live message counts
 - **Automatic file delivery**: Uploads JSON files directly to Discord
 - **Fragment integration**: Includes combined fragmented messages in training data
+
+#### 🔒 Privacy & Consent System
+DeepDiscord includes a comprehensive consent system that protects user privacy:
+
+**How it works:**
+1. When someone runs `!!generatetrainingdata` for a user
+2. If the user hasn't given consent, they receive a DM with a detailed request
+3. Users can accept (✅) or decline (❌) via reaction
+4. Only with explicit consent will data collection proceed
+
+**Consent Management:**
+```bash
+# Check your consent status
+!!consent
+
+# Check someone else's consent status  
+!!consent status @username
+
+# Grant consent to someone (if they asked you directly)
+!!consent grant @requester
+
+# Revoke your consent anytime
+!!consent revoke
+```
+
+**Privacy Protections:**
+- **Explicit consent required**: No data collection without user permission
+- **Detailed disclosure**: Users see exactly what data will be collected
+- **Time-limited**: Consent expires after 90 days
+- **Revocable**: Users can withdraw consent anytime
+- **Transparent**: Clear audit trail of all consent activities
+- **DM notifications**: Users are notified of requests and decisions
 
 ## Development
 
