@@ -245,4 +245,7 @@ discord_data/user_consents.json
 discord_data/authorized_users.json
 
 # Channel restriction data (configuration protection)
-discord_data/allowed_channels.json 
+discord_data/allowed_channels.json
+
+# Claude Code documentation (sensitive codebase information)
+CLAUDE.md
