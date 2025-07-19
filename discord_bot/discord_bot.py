@@ -217,6 +217,7 @@ class DeepDiscordBot(commands.Bot):
         intents.message_content = True
         intents.guilds = True
         intents.messages = True
+        intents.members = True  # Required for member access
         
         super().__init__(
             command_prefix='!',
@@ -1316,31 +1317,74 @@ class TrainingDataCommands(commands.Cog):
             await status_message.edit(embed=error_embed)
     
     @commands.command(name='finduser')
-    async def find_user(self, ctx: commands.Context, *, username: str):
-        """Find users in the server by username/display name
+    async def find_user(self, ctx: commands.Context, *, search_term: str):
+        """Find users in the server by username/display name or user ID
         
-        Usage: !finduser <username>
+        Usage: !finduser <username_or_id>
         
         Args:
-            username: Full or partial username to search for
+            search_term: Username, display name, or user ID to search for
         """
-        username_lower = username.lower()
+        # Check if search term is a user ID (all digits)
+        if search_term.isdigit():
+            user_id = int(search_term)
+            
+            # Direct ID lookup
+            member = ctx.guild.get_member(user_id)
+            if member:
+                embed = discord.Embed(
+                    title="✅ User Found by ID",
+                    description=f"Found user with ID `{user_id}`",
+                    color=discord.Color.green()
+                )
+                embed.add_field(
+                    name=f"{member.display_name}",
+                    value=f"**Username:** {member.name}\n**ID:** `{member.id}`\n**Joined:** {member.joined_at.strftime('%Y-%m-%d') if member.joined_at else 'Unknown'}",
+                    inline=False
+                )
+                await ctx.send(embed=embed)
+                return
+            else:
+                # Try API fetch as fallback
+                try:
+                    member = await ctx.guild.fetch_member(user_id)
+                    embed = discord.Embed(
+                        title="✅ User Found by ID (API)",
+                        description=f"Found user with ID `{user_id}` via API fetch",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(
+                        name=f"{member.display_name}",
+                        value=f"**Username:** {member.name}\n**ID:** `{member.id}`\n**Joined:** {member.joined_at.strftime('%Y-%m-%d') if member.joined_at else 'Unknown'}",
+                        inline=False
+                    )
+                    await ctx.send(embed=embed)
+                    return
+                except discord.NotFound:
+                    await ctx.send(f"❌ No user found with ID `{user_id}` in this server")
+                    return
+                except discord.Forbidden:
+                    await ctx.send(f"❌ Bot doesn't have permission to fetch user `{user_id}`")
+                    return
+        
+        # String search through usernames/display names
+        search_lower = search_term.lower()
         matches = []
         
         # Search through all members
         for member in ctx.guild.members:
-            if (username_lower in member.name.lower() or 
-                username_lower in member.display_name.lower()):
+            if (search_lower in member.name.lower() or 
+                search_lower in member.display_name.lower()):
                 matches.append(member)
         
         if not matches:
-            await ctx.send(f"❌ No users found matching '{username}'")
+            await ctx.send(f"❌ No users found matching '{search_term}'")
             return
         
         # Create embed with results
         embed = discord.Embed(
             title="🔍 User Search Results",
-            description=f"Found {len(matches)} user(s) matching '{username}'",
+            description=f"Found {len(matches)} user(s) matching '{search_term}'",
             color=discord.Color.blue()
         )
         
@@ -1379,6 +1423,63 @@ class TrainingDataCommands(commands.Cog):
         embed.add_field(name="Sample Members (First 5)", value="\n".join(recent_members), inline=False)
         
         await ctx.send(embed=embed)
+    
+    @commands.command(name='testmembers')
+    async def test_members(self, ctx: commands.Context):
+        """Simple test to see if bot can access members"""
+        try:
+            member_count = len(ctx.guild.members)
+            await ctx.send(f"✅ Bot can see {member_count} members in {ctx.guild.name}")
+            
+            # Show first few members as proof
+            first_5 = list(ctx.guild.members)[:5]
+            member_list = "\n".join([f"• {m.display_name} ({m.id})" for m in first_5])
+            await ctx.send(f"**First 5 members:**\n{member_list}")
+            
+        except Exception as e:
+            await ctx.send(f"❌ Error accessing members: {e}")
+    
+    @commands.command(name='reload')
+    @commands.has_permissions(administrator=True)
+    async def reload_bot(self, ctx: commands.Context):
+        """Reload bot cogs for testing (Admin only)"""
+        try:
+            # Remove all cogs
+            cogs_to_remove = list(self.bot.cogs.keys())
+            for cog_name in cogs_to_remove:
+                await self.bot.remove_cog(cog_name)
+            
+            # Re-add all cogs
+            await self.bot.add_cog(MessageCommands(self.bot))
+            await self.bot.add_cog(TrainingDataCommands(self.bot))
+            await self.bot.add_cog(AdminCommands(self.bot))
+            
+            await ctx.send("🔄 Bot cogs reloaded successfully!")
+            
+        except Exception as e:
+            await ctx.send(f"❌ Error reloading cogs: {e}")
+    
+    @commands.command(name='hotreload')
+    @commands.has_permissions(administrator=True)
+    async def hot_reload(self, ctx: commands.Context):
+        """Hot reload the bot module without restarting (Admin only)"""
+        try:
+            import importlib
+            import sys
+            
+            # Get current module
+            current_module = sys.modules[__name__]
+            
+            # Reload the module
+            importlib.reload(current_module)
+            
+            # Reload cogs
+            await self.reload_bot(ctx)
+            
+            await ctx.send("🔥 Hot reload completed! Module and cogs refreshed.")
+            
+        except Exception as e:
+            await ctx.send(f"❌ Hot reload failed: {e}")
 
 class DiscordTrainingDataGenerator:
     """Training data generator integrated with Discord bot"""
