@@ -1,163 +1,142 @@
 # DeepDiscord
 
-A comprehensive AI-powered Discord analysis and training platform that combines real-time message tracking with DeepSeek AI model training.
+A sophisticated Discord bot for message analysis, relationship detection, and AI training data generation.
 
 ## 🏗️ Project Structure
 
 ```
 DeepDiscord/
-├── discord_bot/           # Discord bot for message tracking
-│   ├── discord_bot.py     # Main bot implementation
-│   ├── requirements_discord.txt
-│   ├── env_example.txt    # Environment configuration
-│   ├── README_DISCORD.md  # Bot documentation
-│   └── test_discord_bot.py
-├── training/              # DeepSeek AI training module
-│   ├── deepseek_setup.py  # Model initialization
-│   ├── deepseek_training.py # Training pipeline
-│   ├── requirements_training.txt
-│   └── README_TRAINING.md
-├── venv/                  # Python virtual environment
-├── .gitignore            # Git ignore rules
-└── README.md             # This file
+├── discord_bot/           # Core Discord bot implementation
+│   ├── discord_bot.py     # Main bot with MessageTracker
+│   └── enhanced_commands.py # Advanced bot commands
+├── tools/                 # Standalone tools and utilities
+│   ├── training_data_generator.py # Extract training data
+│   └── enhanced_message_tracker.py # Advanced tracking logic
+├── scripts/              # Convenience scripts
+│   ├── run_tests.sh      # Run test suite
+│   └── generate_training_data.sh # Generate training data
+├── tests/                # Test suite
+├── docs/                 # Documentation and research
+├── training/             # DeepSeek AI training module (legacy)
+├── training_data/        # Generated training datasets (gitignored)
+└── results/             # Test results (gitignored)
 ```
 
-## 🎯 Overview
+## 🎯 Features
 
-DeepDiscord consists of two main components:
+### 🤖 Core Bot Functionality
+- **Message Fragment Detection**: Automatically combines rapid-fire messages from the same user
+- **Response Chain Tracking**: Tracks explicit replies using Discord's reference system  
+- **User Message Analysis**: Comprehensive analysis of user communication patterns
+- **Real-time Processing**: Live message tracking and analysis
 
-### 1. Discord Bot (`discord_bot/`)
-- **Purpose**: Real-time message tracking and analysis
-- **Features**:
-  - Message retrieval by ID
-  - Response relationship tracking
-  - Conversation chain analysis
-  - Data collection for AI training
+### 🎓 Training Data Generation
+- **Question/Answer Pair Extraction**: Generate training data from Discord conversations
+- **Multiple Confidence Levels**: High, medium, and all response pairs
+- **Smart Response Detection**: Temporal proximity, content analysis, and explicit replies
+- **Fragment Integration**: Includes combined fragmented messages in training data
 
-### 2. Training Module (`training/`)
-- **Purpose**: DeepSeek AI model training and fine-tuning
-- **Features**:
-  - Model setup and initialization
-  - Fine-tuning pipeline
-  - Hardware optimization (M4 Mac, RTX 5080)
-  - Text generation capabilities
+### 📊 Analytics & Insights
+- **User Communication Patterns**: Fragment detection, response rates, activity analysis
+- **Conversation Flow Analysis**: Identify standalone messages vs responses
+- **Historical Data Processing**: Analyze past conversations for insights
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.8+
-- Discord bot token
-- Sufficient hardware for AI training
-
-### Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd DeepDiscord
-   ```
-
-2. **Set up virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install Discord bot dependencies**:
-   ```bash
-   cd discord_bot
-   pip install -r requirements_discord.txt
-   ```
-
-4. **Install training dependencies**:
-   ```bash
-   cd ../training
-   pip install -r requirements_training.txt
-   ```
-
-### Configuration
-
-1. **Set up Discord bot**:
-   ```bash
-   cd discord_bot
-   cp env_example.txt .env
-   # Edit .env with your Discord bot token
-   ```
-
-2. **Test bot setup**:
-   ```bash
-   python test_discord_bot.py
-   ```
-
-### Usage
-
-#### Start Discord Bot
+### 1. Setup
 ```bash
-cd discord_bot
-python discord_bot.py
+# Clone and setup environment
+git clone <repository>
+cd DeepDiscord
+cp .env.example .env
+# Edit .env with your Discord bot token and target user ID
 ```
 
-#### Train AI Model
+### 2. Run Tests
 ```bash
-cd training
-python deepseek_setup.py    # Initialize model
-python deepseek_training.py # Start training
+# Test Discord connectivity and user analysis
+./scripts/run_tests.sh
+
+# Or run specific test
+./scripts/run_tests.sh test_discord_user.py
 ```
 
-## 🔧 Features
+### 3. Generate Training Data
+```bash
+# Generate question/answer pairs for training
+./scripts/generate_training_data.sh
+```
 
-### Discord Bot Commands
-- `!getmsg <id>` - Retrieve message by ID
-- `!responses <id>` - Show responses to message
-- `!chain <id>` - Display conversation chain
-- `!userhistory <@user> [limit]` - Get all messages from a user across the server
-- `!stats` - Bot statistics
-- `!save` - Save data (admin)
-- `!saveuser [@user]` - Save user messages to JSON file (admin)
-- `!clear` - Clear cache (admin)
-- `!yes` - Quick save after user history
-- `!no` - Skip saving after user history
+### 4. Run Discord Bot
+```bash
+python discord_bot/discord_bot.py
+```
 
-### Training Capabilities
-- **Model Sizes**: 1.3B (lightweight) and 6.7B (full)
-- **Hardware Support**: CUDA, MPS (Apple Silicon), CPU
-- **Memory Optimization**: Gradient checkpointing, mixed precision
-- **Data Integration**: Works with Discord bot data
+## Configuration
 
-## 🎯 Use Cases
+### Environment Variables (`.env`)
+```bash
+# Required
+DISCORD_TOKEN=your_discord_bot_token_here
+TEST_USER_ID=123456789012345678
 
-1. **Conversation Analysis**: Track and analyze Discord conversations
-2. **AI Training**: Use Discord data to train conversational AI
-3. **Response Prediction**: Predict likely responses in conversations
-4. **Community Insights**: Understand community interaction patterns
+# Optional
+BOT_PREFIX=!
+LOG_LEVEL=INFO
+```
 
-## 🔒 Privacy & Security
+## Usage Examples
 
-- **Local Storage**: All data stored locally
-- **Admin Controls**: Sensitive operations require admin permissions
-- **Data Retention**: Configurable cache limits
-- **No External Sharing**: No data transmitted to external services
+### Generate Training Data
+```bash
+# Generate training pairs for the user specified in .env
+python tools/training_data_generator.py
 
-## 📚 Documentation
+# Output files:
+# training_data/high_confidence_<user_id>_<timestamp>.json
+# training_data/medium_confidence_<user_id>_<timestamp>.json
+# training_data/all_responses_<user_id>_<timestamp>.json
+```
 
-- [Discord Bot Documentation](discord_bot/README_DISCORD.md)
-- [Training Module Documentation](training/README_TRAINING.md)
+### Training Data Format
+```json
+{
+  "question": "OtherUser: What's your favorite game?",
+  "answer": "I really love Final Fantasy XIV, been playing for years!",
+  "metadata": {
+    "response_type": "temporal_proximity",
+    "confidence": 0.85,
+    "channel": "general",
+    "timestamp": "2025-01-19T12:34:56"
+  }
+}
+```
 
-## 🤝 Contributing
+### Bot Commands
+```bash
+!userhistory @user     # Analyze user's message patterns
+!fragment @user        # Show fragment detection results  
+!relationships @user   # Show message relationships
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+## Development
 
-## 📄 License
+### Running Tests
+```bash
+# Full test suite
+./scripts/run_tests.sh
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+# Individual tests
+python tests/test_discord_user.py
+python tests/test_specific_features.py
+```
 
-## 🆘 Support
+### Adding Features
+1. Create feature branch from main
+2. Implement in `discord_bot/` or `tools/`
+3. Add tests in `tests/`
+4. Update documentation
 
-For issues and questions:
-1. Check the relevant module documentation
-2. Review logs in `discord_bot/discord_bot.log`
-3. Create an issue in the project repository
+## License
+
+MIT License - see LICENSE file for details.

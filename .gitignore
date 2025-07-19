@@ -233,4 +233,7 @@ training/wandb/
 training/mlruns/
 
 # Test results
-results/ 
+results/
+
+# Training data
+training_data/ 
