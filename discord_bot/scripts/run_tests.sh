@@ -3,11 +3,14 @@
 echo "🧪 Running DeepDiscord Test Suite"
 echo "================================="
 
-# Check if .env exists
-if [ ! -f ".env" ]; then
+# Check if .env exists (go up one directory since we're in discord_bot/scripts/)
+if [ ! -f "../.env" ]; then
     echo "❌ .env file not found. Please copy .env.example to .env and configure."
     exit 1
 fi
+
+# Change to discord_bot directory for proper imports
+cd "$(dirname "$0")/.."
 
 # Run specific test
 if [ "$1" != "" ]; then

@@ -6,20 +6,27 @@ A sophisticated Discord bot for message analysis, relationship detection, and AI
 
 ```
 DeepDiscord/
-├── discord_bot/           # Core Discord bot implementation
+├── discord_bot/           # Complete Discord bot system
 │   ├── discord_bot.py     # Main bot with MessageTracker
-│   └── enhanced_commands.py # Advanced bot commands
-├── tools/                 # Standalone tools and utilities
-│   ├── training_data_generator.py # Extract training data
-│   └── enhanced_message_tracker.py # Advanced tracking logic
-├── scripts/              # Convenience scripts
-│   ├── run_tests.sh      # Run test suite
-│   └── generate_training_data.sh # Generate training data
-├── tests/                # Test suite
-├── docs/                 # Documentation and research
-├── training/             # DeepSeek AI training module (legacy)
-├── training_data/        # Generated training datasets (gitignored)
-└── results/             # Test results (gitignored)
+│   ├── enhanced_commands.py # Advanced bot commands
+│   ├── tools/             # Bot-specific utilities
+│   │   ├── training_data_generator.py # Extract training data
+│   │   └── enhanced_message_tracker.py # Advanced tracking logic
+│   ├── scripts/           # Bot convenience scripts
+│   │   ├── run_tests.sh   # Run test suite
+│   │   └── generate_training_data.sh # Generate training data
+│   ├── tests/             # Bot test suite
+│   └── results/           # Generated training data archives
+├── training_module/       # AI model training infrastructure
+│   ├── config/            # Training configuration management
+│   ├── models/            # Model architectures and training
+│   ├── data/              # Data loading and preprocessing
+│   ├── utils/             # Training utilities
+│   ├── scripts/           # Training and evaluation scripts
+│   ├── experiments/       # Experiment tracking
+│   └── checkpoints/       # Model saves and checkpoints
+├── docs/                  # Documentation and research
+└── results/              # Shared training data outputs
 ```
 
 ## 🎯 Features
@@ -55,16 +62,16 @@ cp .env.example .env
 ### 2. Run Tests
 ```bash
 # Test Discord connectivity and user analysis
-./scripts/run_tests.sh
+./discord_bot/scripts/run_tests.sh
 
 # Or run specific test
-./scripts/run_tests.sh test_discord_user.py
+./discord_bot/scripts/run_tests.sh test_discord_user.py
 ```
 
 ### 3. Generate Training Data
 ```bash
 # Generate question/answer pairs for training
-./scripts/generate_training_data.sh
+./discord_bot/scripts/generate_training_data.sh
 ```
 
 ### 4. Run Discord Bot
@@ -90,12 +97,11 @@ LOG_LEVEL=INFO
 ### Generate Training Data
 ```bash
 # Generate training pairs for the user specified in .env
-python tools/training_data_generator.py
+python discord_bot/tools/training_data_generator.py
 
-# Output files:
-# training_data/high_confidence_<user_id>_<timestamp>.json
-# training_data/medium_confidence_<user_id>_<timestamp>.json
-# training_data/all_responses_<user_id>_<timestamp>.json
+# Output files (now in ZIP format):
+# discord_bot/results/training_data_<username>_<timestamp>.zip
+# Contains: high_confidence, medium_confidence, and all_responses JSON files
 ```
 
 ### Training Data Format
@@ -174,22 +180,53 @@ DeepDiscord includes a comprehensive consent system that protects user privacy:
 - **Transparent**: Clear audit trail of all consent activities
 - **DM notifications**: Users are notified of requests and decisions
 
+## AI Training Module
+
+The `training_module/` directory contains a complete infrastructure for training AI models on Discord conversation data.
+
+### Features
+- **Configuration-driven training** with flexible hyperparameters
+- **Data preprocessing pipeline** for Discord training archives
+- **Multiple model architectures** support
+- **Experiment tracking** and checkpoint management
+- **Comprehensive evaluation** metrics and testing
+
+### Quick Start
+```bash
+# Install training dependencies
+pip install -r training_module/requirements.txt
+
+# Configure training parameters
+# Edit training_module/config/training_config.py
+
+# Preprocess Discord training data
+python training_module/scripts/preprocess_data.py
+
+# Train the model
+python training_module/scripts/train.py
+
+# Evaluate model performance
+python training_module/scripts/evaluate.py
+```
+
+See `training_module/README.md` for detailed documentation.
+
 ## Development
 
 ### Running Tests
 ```bash
 # Full test suite
-./scripts/run_tests.sh
+./discord_bot/scripts/run_tests.sh
 
 # Individual tests
-python tests/test_discord_user.py
-python tests/test_specific_features.py
+python discord_bot/tests/test_discord_user.py
+python discord_bot/tests/test_specific_features.py
 ```
 
 ### Adding Features
 1. Create feature branch from main
-2. Implement in `discord_bot/` or `tools/`
-3. Add tests in `tests/`
+2. Implement in `discord_bot/` for bot features or `training_module/` for AI training
+3. Add tests in respective `tests/` directories
 4. Update documentation
 
 ## License
