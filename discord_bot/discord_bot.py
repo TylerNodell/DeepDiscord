@@ -116,33 +116,36 @@ class MessageTracker:
         """Determine if a message might be a fragment of a larger message"""
         # Check if user has recent messages in buffer
         if message.author.id not in self.fragment_buffer:
-            return True
+            return False  # No buffer means first message, not a fragment
         
         buffer = self.fragment_buffer[message.author.id]
         if not buffer:
-            return True
+            return False  # Empty buffer means first message, not a fragment
         
         last_msg = buffer[-1]
         time_diff = (message.created_at - last_msg.created_at).total_seconds()
         
-        # Within fragment timeout window
-        if time_diff <= self.fragment_timeout:
-            # Check for fragment indicators
-            last_content = last_msg.content.strip()
-            curr_content = message.content.strip()
-            
-            # Incomplete sentence (no ending punctuation)
-            if last_content and not last_content[-1] in '.!?;':
-                return True
-            
-            # Continuation patterns
-            continuation_starters = ['and', 'but', 'also', 'oh', 'wait', 'actually', 'or', 'i mean', 'correction']
-            if any(curr_content.lower().startswith(pattern) for pattern in continuation_starters):
-                return True
-            
-            # Very short time gap (likely rapid typing)
-            if time_diff <= 5:
-                return True
+        # Must be within fragment timeout window
+        if time_diff > self.fragment_timeout:
+            return False
+        
+        last_content = last_msg.content.strip()
+        curr_content = message.content.strip()
+        
+        # Check for fragment indicators in priority order
+        
+        # 1. Incomplete sentence (no ending punctuation) - STRONG indicator
+        if last_content and not last_content[-1] in '.!?;':
+            return True
+        
+        # 2. Continuation patterns - STRONG indicator
+        continuation_starters = ['and', 'but', 'also', 'oh', 'wait', 'actually', 'or', 'i mean', 'correction']
+        if any(curr_content.lower().startswith(pattern) for pattern in continuation_starters):
+            return True
+        
+        # 3. Very short time gap AND both messages lack punctuation - WEAK indicator
+        if time_diff <= 3 and not (last_content and last_content[-1] in '.!?;') and not (curr_content and curr_content[-1] in '.!?;'):
+            return True
         
         return False
     

@@ -230,4 +230,7 @@ training/outputs/
 training/runs/
 training/logs/
 training/wandb/
-training/mlruns/ 
+training/mlruns/
+
+# Test results
+results/ 
