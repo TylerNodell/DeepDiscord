@@ -249,21 +249,14 @@ class ConsentManager:
         if not user_consent:
             return False
         
-        # Check if consent is still valid (not expired)
+        # Check if consent is still valid (consent no longer expires)
         if user_consent.get('status') != 'granted':
             return False
         
-        # Check expiration if set
-        expires_at = user_consent.get('expires_at')
-        if expires_at:
-            expiry_date = datetime.fromisoformat(expires_at)
-            if datetime.now() > expiry_date:
-                return False
-        
         return True
     
-    def grant_consent(self, user_id: int, requester_id: int, expires_days: Optional[int] = None):
-        """Grant consent for user"""
+    def grant_consent(self, user_id: int, requester_id: int):
+        """Grant consent for user (consent no longer expires)"""
         consent_data = {
             'status': 'granted',
             'granted_at': datetime.now().isoformat(),
@@ -271,15 +264,10 @@ class ConsentManager:
             'user_id': user_id
         }
         
-        if expires_days:
-            expires_at = datetime.now() + timedelta(days=expires_days)
-            consent_data['expires_at'] = expires_at.isoformat()
-        
         self.consents[str(user_id)] = consent_data
         self.save_consents()
         logger.info(f"🔒 CONSENT GRANTED: User {user_id} by requester {requester_id}")
-        if expires_days:
-            logger.info(f"   ⏰ Expires in {expires_days} days")
+        logger.info(f"   ♾️  Consent does not expire")
     
     def revoke_consent(self, user_id: int):
         """Revoke consent for user"""
@@ -318,8 +306,7 @@ class ConsentManager:
             if granted:
                 self.grant_consent(
                     request['user_id'], 
-                    request['requester_id'],
-                    expires_days=90  # 3 months default
+                    request['requester_id']
                 )
 
 class AuthorizationManager:
@@ -1779,8 +1766,7 @@ class TrainingDataCommands(commands.Cog):
         if consent_info:
             logger.info(f"   📋 Consent granted at: {consent_info.get('granted_at', 'Unknown')}")
             logger.info(f"   👤 Granted by request from: {consent_info.get('granted_by_request_from', 'Unknown')}")
-            if 'expires_at' in consent_info:
-                logger.info(f"   ⏰ Expires at: {consent_info.get('expires_at')}")
+            # Note: Consent no longer expires
         
         logger.info(f"   ✅ CONSENT VALIDATION PASSED")
         logger.info(f"🎓 PROCEEDING WITH TRAINING DATA GENERATION")
@@ -2031,7 +2017,7 @@ class TrainingDataCommands(commands.Cog):
             
             consent_embed.add_field(
                 name="🛡️ Your rights:",
-                value="• You can **revoke consent** anytime\n• Data collection **stops immediately** if revoked\n• Consent **expires in 90 days**\n• You can see exactly what data is collected",
+                value="• You can **revoke consent** anytime\n• Data collection **stops immediately** if revoked\n• **Consent does not expire**\n• You can see exactly what data is collected",
                 inline=False
             )
             
@@ -2111,7 +2097,7 @@ class TrainingDataCommands(commands.Cog):
                 )
                 success_embed.add_field(
                     name="📋 What happens next:",
-                    value="• Training data generation will begin automatically\n• You can revoke consent anytime with `!!consent revoke`\n• Consent expires in 90 days",
+                    value="• Training data generation will begin automatically\n• You can revoke consent anytime with `!!consent revoke`\n• **Consent does not expire**",
                     inline=False
                 )
                 
@@ -2144,7 +2130,7 @@ class TrainingDataCommands(commands.Cog):
             # Request timed out
             timeout_embed = discord.Embed(
                 title="⏰ Request Expired",
-                description="This consent request has expired. The requester can send a new request if needed.",
+                description="This consent request has timed out. The requester can send a new request if needed.",
                 color=discord.Color.orange()
             )
             await dm_message.edit(embed=timeout_embed)
@@ -2483,9 +2469,7 @@ class TrainingDataCommands(commands.Cog):
                     if granted_at:
                         embed.add_field(name="Granted At", value=granted_at[:10], inline=True)
                     
-                    expires_at = consent_info.get('expires_at')
-                    if expires_at:
-                        embed.add_field(name="Expires At", value=expires_at[:10], inline=True)
+                    # Note: Consent no longer expires
                         
                 elif status == 'revoked':
                     embed.description = "❌ You have revoked consent for training data collection."
@@ -2548,8 +2532,7 @@ class TrainingDataCommands(commands.Cog):
         # Grant consent
         self.bot.consent_manager.grant_consent(
             ctx.author.id, 
-            requester.id,
-            expires_days=90
+            requester.id
         )
         
         embed = discord.Embed(
@@ -2559,7 +2542,7 @@ class TrainingDataCommands(commands.Cog):
         )
         embed.add_field(
             name="⚠️ Important:",
-            value="• This grants access to your messages for AI training\n• Consent expires in 90 days\n• You can revoke anytime with `!!consent revoke`",
+            value="• This grants access to your messages for AI training\n• **Consent does not expire**\n• You can revoke anytime with `!!consent revoke`",
             inline=False
         )
         
@@ -2860,8 +2843,17 @@ class DiscordTrainingDataGenerator:
         """Create a formatted training pair"""
         question_msg = response_info['message']
         
-        # Format the question (include author context) and clean Unicode
-        question = f"{question_msg.author.display_name}: {self.clean_unicode_content(question_msg.content)}"
+        # Check if we have consent to include the question author's name
+        question_has_consent = self.bot.consent_manager.has_consent(question_msg.author.id)
+        answer_has_consent = self.bot.consent_manager.has_consent(target_response.author.id)
+        
+        # Format the question - include author name only if consent is given
+        if question_has_consent:
+            question = f"{question_msg.author.display_name}: {self.clean_unicode_content(question_msg.content)}"
+            question_author_name = question_msg.author.display_name
+        else:
+            question = self.clean_unicode_content(question_msg.content)
+            question_author_name = "Anonymous"
         
         # Format the answer (get combined content if fragment) and clean Unicode
         answer = self.clean_unicode_content(target_response.content)
@@ -2869,19 +2861,24 @@ class DiscordTrainingDataGenerator:
         if combined_content and not combined_content.startswith("[Fragment of"):
             answer = self.clean_unicode_content(combined_content)
         
+        # Include answer author name only if consent is given
+        answer_author_name = target_response.author.display_name if answer_has_consent else "Anonymous"
+        
         return {
             "question": question.strip(),
             "answer": answer.strip(),
             "metadata": {
                 "response_type": response_info['type'],
                 "confidence": response_info['confidence'],
-                "question_author": question_msg.author.display_name,
-                "answer_author": target_response.author.display_name,
+                "question_author": question_author_name,
+                "answer_author": answer_author_name,
                 "channel": target_response.channel.name,
                 "timestamp": target_response.created_at.isoformat(),
                 "question_id": question_msg.id,
                 "answer_id": target_response.id,
-                "time_gap": response_info.get('time_gap_seconds', 0)
+                "time_gap": response_info.get('time_gap_seconds', 0),
+                "question_author_consent": question_has_consent,
+                "answer_author_consent": answer_has_consent
             }
         }
     
@@ -3280,7 +3277,7 @@ class HelpCommands(commands.Cog):
             name="👥 Consent Information",
             value=(
                 "`!!consent status [@user]` - Check consent status (yours or others)\n"
-                "• Shows current status, expiration, and grant history"
+                "• Shows current status and grant history"
             ),
             inline=False
         )
@@ -3289,7 +3286,7 @@ class HelpCommands(commands.Cog):
             name="🛡️ Privacy Protections",
             value=(
                 "• **Explicit Consent Required**: No data collection without permission\n"
-                "• **Time-Limited**: Consent expires after 90 days\n"
+                "• **Permanent**: Consent does not expire\n"
                 "• **Revocable**: Can withdraw consent anytime\n"
                 "• **Transparent**: Clear audit trail of all activities\n"
                 "• **DM Notifications**: Informed of all requests and decisions"
