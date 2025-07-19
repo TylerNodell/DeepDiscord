@@ -9,10 +9,12 @@ from discord.ext import commands, tasks
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 import os
 from dotenv import load_dotenv
+import io
+from collections import defaultdict
 
 # Load environment variables
 load_dotenv()
@@ -236,6 +238,7 @@ class DeepDiscordBot(commands.Bot):
         
         # Add cogs/commands
         await self.add_cog(MessageCommands(self))
+        await self.add_cog(TrainingDataCommands(self))
         await self.add_cog(AdminCommands(self))
         
         logger.info("Bot setup complete!")
@@ -1173,6 +1176,390 @@ class MessageCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error in show_fragments: {e}")
             await ctx.send("❌ An error occurred while retrieving fragment data.")
+
+class TrainingDataCommands(commands.Cog):
+    """Commands for training data generation"""
+    
+    def __init__(self, bot: DeepDiscordBot):
+        self.bot = bot
+    
+    @commands.command(name='generatetrainingdata')
+    async def generate_training_data(self, ctx: commands.Context, user_id: int, days_back: int = 30):
+        """Generate training data for a specific user
+        
+        Usage: !generatetrainingdata <user_id> [days_back]
+        
+        Args:
+            user_id: Discord user ID to generate training data for
+            days_back: How many days back to analyze (default: 30, max: 365)
+        """
+        # Validate parameters
+        if days_back > 365:
+            await ctx.send("❌ Maximum days back is 365.")
+            return
+        
+        if days_back < 1:
+            await ctx.send("❌ Days back must be at least 1.")
+            return
+        
+        # Check if user exists in this guild
+        target_member = ctx.guild.get_member(user_id)
+        if not target_member:
+            await ctx.send(f"❌ User with ID `{user_id}` not found in this server.")
+            return
+        
+        # Create initial status message
+        status_embed = discord.Embed(
+            title="🎓 Training Data Generation Started",
+            description=f"Generating training data for **{target_member.display_name}**",
+            color=discord.Color.blue()
+        )
+        status_embed.add_field(name="Target User", value=f"{target_member.mention}", inline=True)
+        status_embed.add_field(name="Analysis Period", value=f"{days_back} days", inline=True)
+        status_embed.add_field(name="Status", value="🔍 Starting analysis...", inline=False)
+        
+        status_message = await ctx.send(embed=status_embed)
+        
+        try:
+            # Generate training data
+            generator = DiscordTrainingDataGenerator(
+                bot=self.bot,
+                target_user_id=user_id,
+                guild=ctx.guild,
+                status_message=status_message
+            )
+            
+            training_files = await generator.generate_training_data(days_back)
+            
+            if not training_files:
+                await status_message.edit(embed=discord.Embed(
+                    title="❌ No Training Data Generated",
+                    description="No suitable response pairs were found for this user.",
+                    color=discord.Color.red()
+                ))
+                return
+            
+            # Update status to show completion
+            final_embed = discord.Embed(
+                title="✅ Training Data Generation Complete",
+                description=f"Generated training data for **{target_member.display_name}**",
+                color=discord.Color.green()
+            )
+            
+            # Upload training files
+            files = []
+            for file_info in training_files:
+                with open(file_info['path'], 'rb') as f:
+                    discord_file = discord.File(f, filename=file_info['filename'])
+                    files.append(discord_file)
+                
+                final_embed.add_field(
+                    name=file_info['name'],
+                    value=f"{file_info['count']} training pairs",
+                    inline=True
+                )
+            
+            await status_message.edit(embed=final_embed)
+            
+            # Send files
+            if len(files) <= 10:  # Discord limit
+                await ctx.send(
+                    f"📁 Training data files for {target_member.display_name}:",
+                    files=files
+                )
+            else:
+                # Send files in batches if too many
+                for i in range(0, len(files), 10):
+                    batch = files[i:i+10]
+                    await ctx.send(
+                        f"📁 Training data files (batch {i//10 + 1}):",
+                        files=batch
+                    )
+            
+            # Clean up temporary files
+            for file_info in training_files:
+                try:
+                    os.remove(file_info['path'])
+                except:
+                    pass
+        
+        except Exception as e:
+            logger.error(f"Error generating training data: {e}")
+            error_embed = discord.Embed(
+                title="❌ Training Data Generation Failed",
+                description=f"An error occurred: {str(e)[:1000]}",
+                color=discord.Color.red()
+            )
+            await status_message.edit(embed=error_embed)
+
+class DiscordTrainingDataGenerator:
+    """Training data generator integrated with Discord bot"""
+    
+    def __init__(self, bot: DeepDiscordBot, target_user_id: int, guild: discord.Guild, status_message: discord.Message):
+        self.bot = bot
+        self.target_user_id = target_user_id
+        self.guild = guild
+        self.status_message = status_message
+        self.response_pairs = []
+        self.channels_processed = 0
+        self.messages_analyzed = 0
+        
+    async def generate_training_data(self, days_back: int = 30, min_response_length: int = 10):
+        """Generate training data with Discord timeout management"""
+        cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+        
+        await self.update_status("🔍 Scanning channels...")
+        
+        # Get all accessible text channels
+        accessible_channels = []
+        for channel in self.guild.text_channels:
+            try:
+                # Test if we can read the channel
+                await channel.fetch_message(channel.last_message_id) if channel.last_message_id else None
+                accessible_channels.append(channel)
+            except (discord.Forbidden, discord.NotFound):
+                continue
+        
+        await self.update_status(f"📋 Found {len(accessible_channels)} accessible channels")
+        
+        # Process each channel with delays to avoid timeouts
+        for i, channel in enumerate(accessible_channels):
+            try:
+                await self.update_status(f"📝 Processing #{channel.name} ({i+1}/{len(accessible_channels)})")
+                await self.process_channel_messages(channel, cutoff_date, min_response_length)
+                self.channels_processed += 1
+                
+                # Add delay between channels to avoid rate limits
+                if i < len(accessible_channels) - 1:  # Don't delay after last channel
+                    await asyncio.sleep(2)  # 2 second delay between channels
+                    
+            except Exception as e:
+                logger.error(f"Error processing channel {channel.name}: {e}")
+                continue
+        
+        await self.update_status("💾 Generating training files...")
+        
+        # Generate training files
+        return self.generate_training_files()
+    
+    async def process_channel_messages(self, channel: discord.TextChannel, cutoff_date: datetime, min_response_length: int):
+        """Process messages in a channel with chunked retrieval to avoid timeouts"""
+        messages = []
+        target_responses = 0
+        
+        # Use chunked message retrieval to avoid timeouts
+        chunk_size = 100  # Process in smaller chunks
+        current_after = cutoff_date
+        
+        while True:
+            chunk_messages = []
+            try:
+                # Get a chunk of messages
+                async for message in channel.history(limit=chunk_size, after=current_after, oldest_first=True):
+                    if not message.author.bot:
+                        chunk_messages.append(message)
+                        self.messages_analyzed += 1
+                        
+                        # Add to bot tracker for fragment analysis
+                        await self.bot.message_tracker.add_message(message)
+                
+                if not chunk_messages:
+                    break  # No more messages
+                
+                messages.extend(chunk_messages)
+                current_after = chunk_messages[-1].created_at
+                
+                # Update status every 500 messages
+                if self.messages_analyzed % 500 == 0:
+                    await self.update_status(f"📊 Analyzed {self.messages_analyzed} messages...")
+                
+                # Small delay to avoid rate limits
+                await asyncio.sleep(0.5)
+                
+            except Exception as e:
+                logger.error(f"Error in chunk processing: {e}")
+                break
+        
+        # Sort messages chronologically for relationship analysis
+        messages.sort(key=lambda m: m.created_at)
+        
+        # Find response pairs for target user
+        for i, message in enumerate(messages):
+            if message.author.id == self.target_user_id:
+                target_responses += 1
+                
+                # Look for what they're responding to
+                response_to = await self.find_response_target(message, messages[:i])
+                
+                if response_to and len(message.content.strip()) >= min_response_length:
+                    training_pair = self.create_training_pair(response_to, message)
+                    if training_pair:
+                        self.response_pairs.append(training_pair)
+    
+    async def find_response_target(self, target_message: discord.Message, previous_messages: List[discord.Message]):
+        """Find what message the target user is responding to"""
+        
+        # Method 1: Explicit Discord reply
+        if target_message.reference:
+            try:
+                referenced_msg = await target_message.channel.fetch_message(target_message.reference.message_id)
+                if referenced_msg and not referenced_msg.author.bot:
+                    return {
+                        'type': 'explicit_reply',
+                        'message': referenced_msg,
+                        'confidence': 1.0
+                    }
+            except:
+                pass
+        
+        # Method 2: Temporal proximity (recent message)
+        recent_messages = [msg for msg in previous_messages[-20:] 
+                          if msg.author.id != self.target_user_id 
+                          and not msg.author.bot
+                          and (target_message.created_at - msg.created_at).total_seconds() <= 900]  # 15 minutes
+        
+        if recent_messages:
+            most_recent = recent_messages[-1]
+            time_gap = (target_message.created_at - most_recent.created_at).total_seconds()
+            
+            # Higher confidence for shorter time gaps
+            confidence = max(0.3, 1.0 - (time_gap / 900))
+            
+            return {
+                'type': 'temporal_proximity',
+                'message': most_recent,
+                'confidence': confidence,
+                'time_gap_seconds': time_gap
+            }
+        
+        # Method 3: Content analysis (mentions, keywords)
+        for msg in reversed(previous_messages[-30:]):
+            if msg.author.id != self.target_user_id and not msg.author.bot:
+                if self.has_content_relationship(msg, target_message):
+                    return {
+                        'type': 'content_analysis',
+                        'message': msg,
+                        'confidence': 0.6
+                    }
+        
+        return None
+    
+    def has_content_relationship(self, potential_question: discord.Message, response: discord.Message) -> bool:
+        """Check if response content relates to potential question"""
+        question_content = potential_question.content.lower()
+        response_content = response.content.lower()
+        
+        # Look for shared keywords (excluding common words)
+        common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'i', 'you', 'it', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'can', 'may', 'might', 'that', 'this', 'what', 'when', 'where', 'why', 'how', 'who'}
+        
+        question_words = set(question_content.split()) - common_words
+        response_words = set(response_content.split()) - common_words
+        
+        if len(question_words) > 0 and len(response_words) > 0:
+            shared_words = question_words.intersection(response_words)
+            if len(shared_words) >= 2:
+                return True
+        
+        # Check if response mentions the questioner
+        if potential_question.author.mention in response.content:
+            return True
+        
+        return False
+    
+    def create_training_pair(self, response_info: dict, target_response: discord.Message):
+        """Create a formatted training pair"""
+        question_msg = response_info['message']
+        
+        # Format the question (include author context)
+        question = f"{question_msg.author.display_name}: {question_msg.content}"
+        
+        # Format the answer (get combined content if fragment)
+        answer = target_response.content
+        combined_content = self.bot.message_tracker.get_combined_content(target_response.id)
+        if combined_content and not combined_content.startswith("[Fragment of"):
+            answer = combined_content
+        
+        return {
+            "question": question.strip(),
+            "answer": answer.strip(),
+            "metadata": {
+                "response_type": response_info['type'],
+                "confidence": response_info['confidence'],
+                "question_author": question_msg.author.display_name,
+                "answer_author": target_response.author.display_name,
+                "channel": target_response.channel.name,
+                "timestamp": target_response.created_at.isoformat(),
+                "question_id": question_msg.id,
+                "answer_id": target_response.id,
+                "time_gap": response_info.get('time_gap_seconds', 0)
+            }
+        }
+    
+    def generate_training_files(self):
+        """Generate training data files"""
+        if not self.response_pairs:
+            return []
+        
+        # Filter by confidence levels
+        high_confidence = [pair for pair in self.response_pairs if pair['metadata']['confidence'] >= 0.8]
+        medium_confidence = [pair for pair in self.response_pairs if 0.5 <= pair['metadata']['confidence'] < 0.8]
+        all_pairs = sorted(self.response_pairs, key=lambda x: x['metadata']['confidence'], reverse=True)
+        
+        datasets = {
+            "high_confidence": high_confidence,
+            "medium_confidence": medium_confidence, 
+            "all_responses": all_pairs
+        }
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        training_files = []
+        
+        # Create temporary directory
+        temp_dir = f"/tmp/training_data_{timestamp}"
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        for name, data in datasets.items():
+            if not data:  # Skip empty datasets
+                continue
+                
+            filename = f"{name}_{self.target_user_id}_{timestamp}.json"
+            filepath = os.path.join(temp_dir, filename)
+            
+            training_data = {
+                "metadata": {
+                    "generated_at": datetime.now().isoformat(),
+                    "target_user_id": self.target_user_id,
+                    "total_pairs": len(data),
+                    "confidence_threshold": name,
+                    "format": "question/answer pairs for training",
+                    "channels_processed": self.channels_processed,
+                    "messages_analyzed": self.messages_analyzed
+                },
+                "training_data": data
+            }
+            
+            with open(filepath, 'w') as f:
+                json.dump(training_data, f, indent=2)
+            
+            training_files.append({
+                'name': f"{name.replace('_', ' ').title()}",
+                'filename': filename,
+                'path': filepath,
+                'count': len(data)
+            })
+        
+        return training_files
+    
+    async def update_status(self, status_text: str):
+        """Update the status message"""
+        try:
+            embed = self.status_message.embeds[0]
+            embed.set_field_at(2, name="Status", value=status_text, inline=False)
+            embed.add_field(name="Messages Analyzed", value=str(self.messages_analyzed), inline=True)
+            embed.add_field(name="Training Pairs Found", value=str(len(self.response_pairs)), inline=True)
+            await self.status_message.edit(embed=embed)
+        except:
+            pass  # Ignore update errors
 
 class AdminCommands(commands.Cog):
     """Administrative commands"""

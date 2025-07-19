@@ -114,10 +114,29 @@ python tools/training_data_generator.py
 
 ### Bot Commands
 ```bash
-!userhistory @user     # Analyze user's message patterns
-!fragment @user        # Show fragment detection results  
-!relationships @user   # Show message relationships
+!userhistory @user                    # Analyze user's message patterns
+!fragment @user                       # Show fragment detection results  
+!relationships @user                  # Show message relationships
+!generatetrainingdata <user_id> [days] # Generate training data files for specific user
 ```
+
+#### Training Data Generation
+The `!generatetrainingdata` command creates question/answer training pairs from Discord conversations:
+
+```bash
+# Generate training data for user (30 days default)
+!generatetrainingdata 123456789012345678
+
+# Generate training data for user (60 days back)
+!generatetrainingdata 123456789012345678 60
+```
+
+**Features:**
+- **Smart timeout management**: Processes large histories without Discord API timeouts
+- **Multiple confidence levels**: Generates high, medium, and all confidence datasets
+- **Real-time status updates**: Shows progress with live message counts
+- **Automatic file delivery**: Uploads JSON files directly to Discord
+- **Fragment integration**: Includes combined fragmented messages in training data
 
 ## Development
 
