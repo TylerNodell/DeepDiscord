@@ -15,6 +15,7 @@ import os
 from dotenv import load_dotenv
 import io
 from collections import defaultdict
+import uuid
 
 # Load environment variables
 load_dotenv()
@@ -209,6 +210,271 @@ class MessageTracker:
         """Get combined content if message was part of fragments"""
         return self.combined_messages.get(message_id)
 
+class ConsentManager:
+    """Manages user consent for training data collection"""
+    
+    def __init__(self, data_dir: str = "discord_data"):
+        self.data_dir = data_dir
+        self.consent_file = os.path.join(data_dir, "user_consents.json")
+        self.pending_requests = {}  # request_id -> {user_id, requester_id, timestamp}
+        self.load_consents()
+    
+    def load_consents(self):
+        """Load existing consent data"""
+        try:
+            if os.path.exists(self.consent_file):
+                with open(self.consent_file, 'r') as f:
+                    self.consents = json.load(f)
+            else:
+                self.consents = {}
+        except Exception as e:
+            logger.error(f"Error loading consents: {e}")
+            self.consents = {}
+    
+    def save_consents(self):
+        """Save consent data to file"""
+        try:
+            os.makedirs(self.data_dir, exist_ok=True)
+            with open(self.consent_file, 'w') as f:
+                json.dump(self.consents, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving consents: {e}")
+    
+    def has_consent(self, user_id: int) -> bool:
+        """Check if user has given consent"""
+        user_consent = self.consents.get(str(user_id))
+        if not user_consent:
+            return False
+        
+        # Check if consent is still valid (not expired)
+        if user_consent.get('status') != 'granted':
+            return False
+        
+        # Check expiration if set
+        expires_at = user_consent.get('expires_at')
+        if expires_at:
+            expiry_date = datetime.fromisoformat(expires_at)
+            if datetime.now() > expiry_date:
+                return False
+        
+        return True
+    
+    def grant_consent(self, user_id: int, requester_id: int, expires_days: Optional[int] = None):
+        """Grant consent for user"""
+        consent_data = {
+            'status': 'granted',
+            'granted_at': datetime.now().isoformat(),
+            'granted_by_request_from': requester_id,
+            'user_id': user_id
+        }
+        
+        if expires_days:
+            expires_at = datetime.now() + timedelta(days=expires_days)
+            consent_data['expires_at'] = expires_at.isoformat()
+        
+        self.consents[str(user_id)] = consent_data
+        self.save_consents()
+        logger.info(f"Consent granted for user {user_id}")
+    
+    def revoke_consent(self, user_id: int):
+        """Revoke consent for user"""
+        if str(user_id) in self.consents:
+            self.consents[str(user_id)]['status'] = 'revoked'
+            self.consents[str(user_id)]['revoked_at'] = datetime.now().isoformat()
+            self.save_consents()
+            logger.info(f"Consent revoked for user {user_id}")
+    
+    def get_consent_info(self, user_id: int) -> Optional[Dict]:
+        """Get detailed consent information for user"""
+        return self.consents.get(str(user_id))
+    
+    def create_consent_request(self, user_id: int, requester_id: int) -> str:
+        """Create a pending consent request"""
+        request_id = str(uuid.uuid4())[:8]  # Short UUID
+        self.pending_requests[request_id] = {
+            'user_id': user_id,
+            'requester_id': requester_id,
+            'timestamp': datetime.now().isoformat(),
+            'status': 'pending'
+        }
+        return request_id
+    
+    def get_pending_request(self, request_id: str) -> Optional[Dict]:
+        """Get pending request by ID"""
+        return self.pending_requests.get(request_id)
+    
+    def complete_request(self, request_id: str, granted: bool):
+        """Mark request as completed"""
+        if request_id in self.pending_requests:
+            request = self.pending_requests[request_id]
+            request['status'] = 'granted' if granted else 'denied'
+            request['completed_at'] = datetime.now().isoformat()
+            
+            if granted:
+                self.grant_consent(
+                    request['user_id'], 
+                    request['requester_id'],
+                    expires_days=90  # 3 months default
+                )
+
+class AuthorizationManager:
+    """Manages user authorization for training data commands"""
+    
+    def __init__(self, data_dir: str = "discord_data"):
+        self.data_dir = data_dir
+        self.auth_file = os.path.join(data_dir, "authorized_users.json")
+        self.owner_user_id = 97544083005771776  # Always authorized
+        self.load_authorized_users()
+    
+    def load_authorized_users(self):
+        """Load existing authorized users"""
+        try:
+            if os.path.exists(self.auth_file):
+                with open(self.auth_file, 'r') as f:
+                    data = json.load(f)
+                    self.authorized_users = set(data.get('authorized_users', []))
+            else:
+                self.authorized_users = set()
+        except Exception as e:
+            logger.error(f"Error loading authorized users: {e}")
+            self.authorized_users = set()
+    
+    def save_authorized_users(self):
+        """Save authorized users to file"""
+        try:
+            os.makedirs(self.data_dir, exist_ok=True)
+            data = {
+                'authorized_users': list(self.authorized_users),
+                'last_updated': datetime.now().isoformat()
+            }
+            with open(self.auth_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving authorized users: {e}")
+    
+    def is_authorized(self, user_id: int, is_admin: bool = False) -> bool:
+        """Check if user is authorized to use training data commands"""
+        # Owner is always authorized
+        if user_id == self.owner_user_id:
+            return True
+        
+        # Admins are always authorized
+        if is_admin:
+            return True
+        
+        # Check authorized users list
+        return user_id in self.authorized_users
+    
+    def authorize_user(self, user_id: int) -> bool:
+        """Authorize a user"""
+        if user_id not in self.authorized_users:
+            self.authorized_users.add(user_id)
+            self.save_authorized_users()
+            return True
+        return False
+    
+    def deauthorize_user(self, user_id: int) -> bool:
+        """Deauthorize a user (cannot deauthorize owner)"""
+        if user_id == self.owner_user_id:
+            return False
+        
+        if user_id in self.authorized_users:
+            self.authorized_users.remove(user_id)
+            self.save_authorized_users()
+            return True
+        return False
+    
+    def get_authorized_users(self) -> List[int]:
+        """Get list of all authorized users"""
+        return [self.owner_user_id] + list(self.authorized_users)
+
+class ChannelManager:
+    """Manages which channels the bot is allowed to post in"""
+    
+    def __init__(self, data_dir: str = "discord_data"):
+        self.data_dir = data_dir
+        self.channels_file = os.path.join(data_dir, "allowed_channels.json")
+        self.load_allowed_channels()
+    
+    def load_allowed_channels(self):
+        """Load existing allowed channels"""
+        try:
+            if os.path.exists(self.channels_file):
+                with open(self.channels_file, 'r') as f:
+                    data = json.load(f)
+                    # Store as guild_id -> set of channel_ids
+                    self.allowed_channels = {}
+                    for guild_id, channels in data.get('allowed_channels', {}).items():
+                        self.allowed_channels[int(guild_id)] = set(channels)
+            else:
+                self.allowed_channels = {}
+        except Exception as e:
+            logger.error(f"Error loading allowed channels: {e}")
+            self.allowed_channels = {}
+    
+    def save_allowed_channels(self):
+        """Save allowed channels to file"""
+        try:
+            os.makedirs(self.data_dir, exist_ok=True)
+            # Convert sets to lists for JSON serialization
+            serializable_data = {}
+            for guild_id, channels in self.allowed_channels.items():
+                serializable_data[str(guild_id)] = list(channels)
+            
+            data = {
+                'allowed_channels': serializable_data,
+                'last_updated': datetime.now().isoformat()
+            }
+            with open(self.channels_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving allowed channels: {e}")
+    
+    def is_channel_allowed(self, guild_id: int, channel_id: int) -> bool:
+        """Check if bot is allowed to post in this channel"""
+        # If no restrictions set for this guild, allow all channels
+        if guild_id not in self.allowed_channels:
+            return True
+        
+        # If restrictions exist, check if channel is in allowed list
+        return channel_id in self.allowed_channels[guild_id]
+    
+    def add_allowed_channel(self, guild_id: int, channel_id: int) -> bool:
+        """Add a channel to allowed list"""
+        if guild_id not in self.allowed_channels:
+            self.allowed_channels[guild_id] = set()
+        
+        if channel_id not in self.allowed_channels[guild_id]:
+            self.allowed_channels[guild_id].add(channel_id)
+            self.save_allowed_channels()
+            return True
+        return False
+    
+    def remove_allowed_channel(self, guild_id: int, channel_id: int) -> bool:
+        """Remove a channel from allowed list"""
+        if guild_id in self.allowed_channels and channel_id in self.allowed_channels[guild_id]:
+            self.allowed_channels[guild_id].remove(channel_id)
+            
+            # If no channels left for this guild, remove the guild entry
+            if not self.allowed_channels[guild_id]:
+                del self.allowed_channels[guild_id]
+            
+            self.save_allowed_channels()
+            return True
+        return False
+    
+    def get_allowed_channels(self, guild_id: int) -> List[int]:
+        """Get list of allowed channels for a guild"""
+        return list(self.allowed_channels.get(guild_id, []))
+    
+    def clear_allowed_channels(self, guild_id: int) -> bool:
+        """Clear all channel restrictions for a guild (allow all channels)"""
+        if guild_id in self.allowed_channels:
+            del self.allowed_channels[guild_id]
+            self.save_allowed_channels()
+            return True
+        return False
+
 class DeepDiscordBot(commands.Bot):
     """Main Discord bot class for message tracking and retrieval"""
     
@@ -220,7 +486,7 @@ class DeepDiscordBot(commands.Bot):
         intents.members = True  # Required for member access
         
         super().__init__(
-            command_prefix='!',
+            command_prefix='!!',
             intents=intents,
             help_command=None
         )
@@ -230,25 +496,166 @@ class DeepDiscordBot(commands.Bot):
         self.start_time = datetime.utcnow()
         os.makedirs(self.data_dir, exist_ok=True)
         
+        # Initialize consent manager
+        self.consent_manager = ConsentManager(self.data_dir)
+        
+        # Initialize authorization manager
+        self.authorization_manager = AuthorizationManager(self.data_dir)
+        
+        # Initialize channel manager
+        self.channel_manager = ChannelManager(self.data_dir)
+        
         # Load existing data
         self.load_message_data()
+    
+    def can_use_channel(self, guild_id: int, channel_id: int) -> bool:
+        """Check if bot can post in the specified channel"""
+        return self.channel_manager.is_channel_allowed(guild_id, channel_id)
     
     async def setup_hook(self):
         """Setup hook for bot initialization"""
         logger.info("Setting up DeepDiscord bot...")
         
+        # Add global check for channel restrictions
+        self.add_check(self.global_channel_check)
+        
         # Add cogs/commands
         await self.add_cog(MessageCommands(self))
         await self.add_cog(TrainingDataCommands(self))
+        await self.add_cog(HelpCommands(self))
         await self.add_cog(AdminCommands(self))
         
         logger.info("Bot setup complete!")
+    
+    async def global_channel_check(self, ctx):
+        """Global check for channel restrictions"""
+        # Skip check for DMs
+        if not ctx.guild:
+            return True
+        
+        # Skip check for help commands (they should always work)
+        if ctx.command and ctx.command.name in ['help', 'commands']:
+            return True
+        
+        # Skip check for admin commands or if user is admin
+        if ctx.author.guild_permissions.administrator:
+            return True
+        
+        # Skip check for specific admin commands (in case permission check fails)
+        if ctx.command and ctx.command.name in ['channels', 'authorize', 'save', 'clear', 'reload', 'hotreload']:
+            return True
+        
+        # Check if channel is allowed
+        if not self.can_use_channel(ctx.guild.id, ctx.channel.id):
+            logger.info(f"Command '{ctx.command}' blocked in restricted channel #{ctx.channel.name}")
+            return False
+        
+        return True
+    
+    async def on_command_error(self, ctx, error):
+        """Global error handler for commands"""
+        try:
+            if isinstance(error, commands.CommandNotFound):
+                # Silently ignore unknown commands
+                return
+            
+            elif isinstance(error, commands.MissingPermissions):
+                await self.safe_send_error(ctx, f"❌ You don't have permission to use this command. Required: {', '.join(error.missing_permissions)}")
+            
+            elif isinstance(error, commands.CheckFailure):
+                # This includes channel restrictions - silently ignore
+                logger.info(f"Command check failed for '{ctx.command}' in #{ctx.channel.name}")
+                return
+            
+            elif isinstance(error, commands.ChannelNotFound):
+                await self.safe_send_error(ctx, "❌ Channel not found. Please mention a valid channel with #channel-name or use the channel ID.")
+            
+            elif isinstance(error, commands.MemberNotFound):
+                await self.safe_send_error(ctx, "❌ User not found. Please mention a valid user or use their user ID.")
+            
+            elif isinstance(error, commands.CommandInvokeError):
+                # Handle the underlying error
+                original_error = error.original
+                
+                if isinstance(original_error, discord.Forbidden):
+                    # Bot lacks permissions - don't try to send message, just log
+                    logger.error(f"Bot lacks permissions in #{ctx.channel.name}: {original_error}")
+                    try:
+                        await ctx.message.add_reaction("❌")
+                    except:
+                        pass
+                
+                elif isinstance(original_error, discord.NotFound):
+                    await self.safe_send_error(ctx, "❌ The requested resource was not found.")
+                
+                else:
+                    # Log unexpected errors
+                    logger.error(f"Unexpected error in command '{ctx.command}': {original_error}")
+                    await self.safe_send_error(ctx, "❌ An unexpected error occurred. Please try again later.")
+            
+            else:
+                # Log other unexpected errors
+                logger.error(f"Unhandled command error: {error}")
+                await self.safe_send_error(ctx, "❌ An error occurred while processing your command.")
+        
+        except Exception as e:
+            # Prevent recursion - just log if error handler fails
+            logger.error(f"Error handler failed: {e}")
+    
+    async def safe_send_error(self, ctx, message):
+        """Safely send error message without causing recursion"""
+        try:
+            await ctx.send(message)
+        except discord.Forbidden:
+            # Can't send messages - try reaction instead
+            try:
+                await ctx.message.add_reaction("❌")
+            except:
+                # Can't even react - just log
+                logger.error(f"Cannot respond in #{ctx.channel.name}: {message}")
+        except Exception as e:
+            # Any other error - just log to prevent recursion
+            logger.error(f"Failed to send error message: {e}")
+    
+    async def handle_missing_permissions(self, ctx):
+        """Handle cases where bot lacks permissions to send messages or embeds"""
+        try:
+            # Try to send a simple message first
+            await ctx.send("❌ I don't have permission to send embeds in this channel. Please check my permissions.")
+        except discord.Forbidden:
+            # Can't even send messages - try to react or log
+            try:
+                await ctx.message.add_reaction("❌")
+            except:
+                # Log that we couldn't respond at all
+                logger.error(f"Bot has no permissions to respond in #{ctx.channel.name} ({ctx.guild.name})")
     
     async def on_ready(self):
         """Called when bot is ready"""
         if self.user:
             logger.info(f'Bot logged in as {self.user.name} ({self.user.id})')
         logger.info(f'Connected to {len(self.guilds)} guilds')
+        
+        # Check permissions in each guild
+        for guild in self.guilds:
+            me = guild.me
+            if me:
+                perms = me.guild_permissions
+                missing_perms = []
+                
+                if not perms.send_messages:
+                    missing_perms.append("Send Messages")
+                if not perms.embed_links:
+                    missing_perms.append("Embed Links")
+                if not perms.read_message_history:
+                    missing_perms.append("Read Message History")
+                if not perms.add_reactions:
+                    missing_perms.append("Add Reactions")
+                
+                if missing_perms:
+                    logger.warning(f"Missing permissions in {guild.name}: {', '.join(missing_perms)}")
+                else:
+                    logger.info(f"All required permissions present in {guild.name}")
         
         # Set bot status
         await self.change_presence(
@@ -745,7 +1152,7 @@ class MessageCommands(commands.Cog):
                 )
                 save_embed.add_field(
                     name="Manual Save",
-                    value=f"`!saveuser {user_id}` (Admin only)",
+                    value=f"`!!saveuser {user_id}` (Admin only)",
                     inline=False
                 )
                 save_embed.set_footer(text="Data will be kept in memory for 10 minutes")
@@ -783,7 +1190,7 @@ class MessageCommands(commands.Cog):
                 # Check if there are any pending saves
                 if not self.bot.message_tracker.pending_saves:
                     logger.warning("No pending saves found")
-                    await ctx.send("❌ No pending saves found. Please specify a user ID or run `!userhistory` first.")
+                    await ctx.send("❌ No pending saves found. Please specify a user ID or run `!!userhistory` first.")
                     return
                 
                 # Use the most recent pending save
@@ -1023,7 +1430,7 @@ class MessageCommands(commands.Cog):
             
             if not self.bot.message_tracker.pending_saves:
                 logger.warning("No pending saves found for quick save")
-                await ctx.send("❌ No pending saves found. Run `!userhistory` first.")
+                await ctx.send("❌ No pending saves found. Run `!!userhistory` first.")
                 return
             
             # Get the most recent pending save
@@ -1194,6 +1601,14 @@ class TrainingDataCommands(commands.Cog):
             user_id: Discord user ID to generate training data for
             days_back: How many days back to analyze (default: 30, max: 365)
         """
+        # Check if user is authorized
+        is_admin = ctx.author.guild_permissions.administrator
+        is_authorized = self.bot.authorization_manager.is_authorized(ctx.author.id, is_admin)
+        
+        if not is_authorized:
+            await ctx.send("❌ You don't have permission to use this command. Only administrators and authorized users can generate training data. Ask an admin to run `!!authorize add @you` to get access.")
+            return
+        
         # Validate parameters
         if days_back > 365:
             await ctx.send("❌ Maximum days back is 365.")
@@ -1223,7 +1638,7 @@ class TrainingDataCommands(commands.Cog):
                 )
                 debug_embed.add_field(
                     name="Suggestions",
-                    value="• Verify the user ID is correct\n• Check if user is in this server\n• Try `!userhistory @username` to get their ID",
+                    value="• Verify the user ID is correct\n• Check if user is in this server\n• Try `!!userhistory @username` to get their ID",
                     inline=False
                 )
                 await ctx.send(embed=debug_embed)
@@ -1231,6 +1646,11 @@ class TrainingDataCommands(commands.Cog):
             except discord.Forbidden:
                 await ctx.send(f"❌ Bot doesn't have permission to fetch member `{user_id}`.")
                 return
+        
+        # Check if user has given consent
+        if not self.bot.consent_manager.has_consent(user_id):
+            await self.request_user_consent(ctx, target_member, days_back)
+            return
         
         # Create initial status message
         status_embed = discord.Embed(
@@ -1315,6 +1735,255 @@ class TrainingDataCommands(commands.Cog):
                 color=discord.Color.red()
             )
             await status_message.edit(embed=error_embed)
+    
+    async def request_user_consent(self, ctx: commands.Context, target_member: discord.Member, days_back: int):
+        """Request consent from user via DM"""
+        try:
+            # Create consent request
+            request_id = self.bot.consent_manager.create_consent_request(
+                target_member.id, 
+                ctx.author.id
+            )
+            
+            # Create consent request embed
+            consent_embed = discord.Embed(
+                title="🔒 Training Data Consent Request",
+                description=f"**{ctx.author.display_name}** has requested permission to use your Discord messages for AI training data generation.",
+                color=discord.Color.orange()
+            )
+            
+            consent_embed.add_field(
+                name="📊 What data would be collected?",
+                value=f"• Your messages from the past **{days_back} days**\n• Question/answer pairs from conversations\n• Message timestamps and channel names\n• **No private/deleted messages**",
+                inline=False
+            )
+            
+            consent_embed.add_field(
+                name="🎯 How will it be used?",
+                value="• AI model training only\n• Creating conversational datasets\n• Improving response generation\n• **Data stays within the requesting user**",
+                inline=False
+            )
+            
+            consent_embed.add_field(
+                name="🛡️ Your rights:",
+                value="• You can **revoke consent** anytime\n• Data collection **stops immediately** if revoked\n• Consent **expires in 90 days**\n• You can see exactly what data is collected",
+                inline=False
+            )
+            
+            consent_embed.add_field(
+                name="📝 Request Details:",
+                value=f"**Requester:** {ctx.author.display_name}\n**Server:** {ctx.guild.name}\n**Request ID:** `{request_id}`\n**Days back:** {days_back}",
+                inline=False
+            )
+            
+            consent_embed.set_footer(text="React with ✅ to grant consent or ❌ to decline")
+            
+            # Send DM to target user
+            try:
+                dm_message = await target_member.send(embed=consent_embed)
+                
+                # Add reaction buttons
+                await dm_message.add_reaction("✅")
+                await dm_message.add_reaction("❌")
+                
+                # Notify requester
+                response_embed = discord.Embed(
+                    title="📩 Consent Request Sent",
+                    description=f"A consent request has been sent to **{target_member.display_name}** via DM.",
+                    color=discord.Color.blue()
+                )
+                response_embed.add_field(
+                    name="⏳ Next Steps:",
+                    value=f"• User will receive a detailed consent request\n• They can accept (✅) or decline (❌)\n• You'll be notified of their decision\n• **Request ID:** `{request_id}`",
+                    inline=False
+                )
+                
+                await ctx.send(embed=response_embed)
+                
+                # Set up reaction listener
+                await self.setup_consent_listener(dm_message, request_id, ctx.author, ctx, target_member, days_back)
+                
+            except discord.Forbidden:
+                # User has DMs disabled
+                fallback_embed = discord.Embed(
+                    title="❌ Cannot Send DM",
+                    description=f"Unable to send consent request to **{target_member.display_name}** - their DMs are disabled.",
+                    color=discord.Color.red()
+                )
+                fallback_embed.add_field(
+                    name="Alternative Options:",
+                    value=f"• Ask {target_member.mention} to enable DMs temporarily\n• Request consent in a public channel\n• Use `!!consent grant @{target_member.display_name}` (if they agree)",
+                    inline=False
+                )
+                await ctx.send(embed=fallback_embed)
+                
+        except Exception as e:
+            logger.error(f"Error requesting consent: {e}")
+            await ctx.send(f"❌ Error sending consent request: {e}")
+    
+    async def setup_consent_listener(self, dm_message: discord.Message, request_id: str, requester: discord.User, ctx: commands.Context, target_member: discord.Member, days_back: int):
+        """Set up listener for consent response"""
+        def check(reaction, user):
+            return (user.id != self.bot.user.id and 
+                   reaction.message.id == dm_message.id and 
+                   str(reaction.emoji) in ["✅", "❌"])
+        
+        try:
+            # Wait for reaction (10 minutes timeout)
+            reaction, user = await self.bot.wait_for('reaction_add', timeout=600.0, check=check)
+            
+            granted = str(reaction.emoji) == "✅"
+            
+            # Complete the request
+            self.bot.consent_manager.complete_request(request_id, granted)
+            
+            # Update the DM message
+            if granted:
+                success_embed = discord.Embed(
+                    title="✅ Consent Granted",
+                    description="Thank you! Your consent has been recorded.",
+                    color=discord.Color.green()
+                )
+                success_embed.add_field(
+                    name="📋 What happens next:",
+                    value="• Training data generation will begin automatically\n• You can revoke consent anytime with `!!consent revoke`\n• Consent expires in 90 days",
+                    inline=False
+                )
+                
+                # Notify requester and start training
+                try:
+                    await requester.send(f"✅ **Consent Granted!** User {user.display_name} has approved your training data request (ID: `{request_id}`). Training data generation is starting automatically...")
+                except:
+                    pass  # Ignore if can't DM requester
+                
+                # Start training data generation automatically
+                await self.start_training_generation(ctx, target_member, days_back)
+                    
+            else:
+                decline_embed = discord.Embed(
+                    title="❌ Consent Declined",
+                    description="Your decision has been recorded. No data will be collected.",
+                    color=discord.Color.red()
+                )
+                
+                # Notify requester
+                try:
+                    await requester.send(f"❌ **Consent Declined.** User {user.display_name} has declined your training data request (ID: `{request_id}`).")
+                except:
+                    pass  # Ignore if can't DM requester
+            
+            await dm_message.edit(embed=success_embed if granted else decline_embed)
+            await dm_message.clear_reactions()
+            
+        except asyncio.TimeoutError:
+            # Request timed out
+            timeout_embed = discord.Embed(
+                title="⏰ Request Expired",
+                description="This consent request has expired. The requester can send a new request if needed.",
+                color=discord.Color.orange()
+            )
+            await dm_message.edit(embed=timeout_embed)
+            await dm_message.clear_reactions()
+            
+            # Notify requester
+            try:
+                await requester.send(f"⏰ **Request Expired.** The consent request (ID: `{request_id}`) timed out after 10 minutes.")
+            except:
+                pass
+    
+    async def start_training_generation(self, ctx: commands.Context, target_member: discord.Member, days_back: int):
+        """Start training data generation after consent is granted"""
+        try:
+            # Send notification in the original channel
+            start_embed = discord.Embed(
+                title="🎓 Training Data Generation Starting",
+                description=f"Consent granted! Beginning training data generation for **{target_member.display_name}**",
+                color=discord.Color.green()
+            )
+            await ctx.send(embed=start_embed)
+            
+            # Run the actual training generation (copy the logic from the main command)
+            status_embed = discord.Embed(
+                title="🎓 Training Data Generation Started",
+                description=f"Generating training data for **{target_member.display_name}**",
+                color=discord.Color.blue()
+            )
+            status_embed.add_field(name="Target User", value=f"{target_member.mention}", inline=True)
+            status_embed.add_field(name="Analysis Period", value=f"{days_back} days", inline=True)
+            status_embed.add_field(name="Status", value="🔍 Starting analysis...", inline=False)
+            
+            status_message = await ctx.send(embed=status_embed)
+            
+            # Generate training data
+            generator = DiscordTrainingDataGenerator(
+                bot=self.bot,
+                target_user_id=target_member.id,
+                guild=ctx.guild,
+                status_message=status_message
+            )
+            
+            training_files = await generator.generate_training_data(days_back)
+            
+            if not training_files:
+                await status_message.edit(embed=discord.Embed(
+                    title="❌ No Training Data Generated",
+                    description="No suitable response pairs were found for this user.",
+                    color=discord.Color.red()
+                ))
+                return
+            
+            # Update status to show completion
+            final_embed = discord.Embed(
+                title="✅ Training Data Generation Complete",
+                description=f"Generated training data for **{target_member.display_name}**",
+                color=discord.Color.green()
+            )
+            
+            # Upload training files
+            files = []
+            for file_info in training_files:
+                with open(file_info['path'], 'rb') as f:
+                    discord_file = discord.File(f, filename=file_info['filename'])
+                    files.append(discord_file)
+                
+                final_embed.add_field(
+                    name=file_info['name'],
+                    value=f"{file_info['count']} training pairs",
+                    inline=True
+                )
+            
+            await status_message.edit(embed=final_embed)
+            
+            # Send files
+            if len(files) <= 10:  # Discord limit
+                await ctx.send(
+                    f"📁 Training data files for {target_member.display_name}:",
+                    files=files
+                )
+            else:
+                # Send files in batches if too many
+                for i in range(0, len(files), 10):
+                    batch = files[i:i+10]
+                    await ctx.send(
+                        f"📁 Training data files (batch {i//10 + 1}):",
+                        files=batch
+                    )
+            
+            # Clean up temporary files
+            for file_info in training_files:
+                try:
+                    os.remove(file_info['path'])
+                except:
+                    pass
+        
+        except Exception as e:
+            logger.error(f"Error in automatic training generation: {e}")
+            error_embed = discord.Embed(
+                title="❌ Training Data Generation Failed",
+                description=f"An error occurred during automatic generation: {str(e)[:1000]}",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=error_embed)
     
     @commands.command(name='finduser')
     async def find_user(self, ctx: commands.Context, *, search_term: str):
@@ -1480,6 +2149,148 @@ class TrainingDataCommands(commands.Cog):
             
         except Exception as e:
             await ctx.send(f"❌ Hot reload failed: {e}")
+    
+    @commands.group(name='consent', invoke_without_command=True)
+    async def consent_group(self, ctx: commands.Context):
+        """Manage training data consent"""
+        if ctx.invoked_subcommand is None:
+            # Show user's current consent status
+            consent_info = self.bot.consent_manager.get_consent_info(ctx.author.id)
+            
+            embed = discord.Embed(
+                title="🔒 Your Consent Status",
+                color=discord.Color.blue()
+            )
+            
+            if not consent_info:
+                embed.description = "You have not granted consent for training data collection."
+                embed.add_field(
+                    name="Available Commands:",
+                    value="`!!consent status` - Check detailed status\n`!!consent grant <@user>` - Grant consent to someone\n`!!consent revoke` - Revoke your consent",
+                    inline=False
+                )
+            else:
+                status = consent_info.get('status', 'unknown')
+                if status == 'granted':
+                    embed.description = "✅ You have granted consent for training data collection."
+                    embed.color = discord.Color.green()
+                    
+                    granted_at = consent_info.get('granted_at')
+                    if granted_at:
+                        embed.add_field(name="Granted At", value=granted_at[:10], inline=True)
+                    
+                    expires_at = consent_info.get('expires_at')
+                    if expires_at:
+                        embed.add_field(name="Expires At", value=expires_at[:10], inline=True)
+                        
+                elif status == 'revoked':
+                    embed.description = "❌ You have revoked consent for training data collection."
+                    embed.color = discord.Color.red()
+            
+            await ctx.send(embed=embed)
+    
+    @consent_group.command(name='status')
+    async def consent_status(self, ctx: commands.Context, user: discord.Member = None):
+        """Check consent status for yourself or another user"""
+        target_user = user or ctx.author
+        consent_info = self.bot.consent_manager.get_consent_info(target_user.id)
+        
+        embed = discord.Embed(
+            title=f"🔒 Consent Status for {target_user.display_name}",
+            color=discord.Color.blue()
+        )
+        
+        if not consent_info:
+            embed.description = "No consent record found."
+            embed.color = discord.Color.orange()
+        else:
+            status = consent_info.get('status', 'unknown')
+            
+            if status == 'granted':
+                embed.description = "✅ Consent granted for training data collection"
+                embed.color = discord.Color.green()
+            elif status == 'revoked':
+                embed.description = "❌ Consent revoked"
+                embed.color = discord.Color.red()
+            
+            # Add details
+            for key, value in consent_info.items():
+                if key != 'status' and key != 'user_id':
+                    formatted_key = key.replace('_', ' ').title()
+                    if 'at' in key and isinstance(value, str):
+                        # Format timestamps
+                        try:
+                            formatted_value = value[:19].replace('T', ' ')
+                        except:
+                            formatted_value = value
+                    else:
+                        formatted_value = str(value)
+                    embed.add_field(name=formatted_key, value=formatted_value, inline=True)
+        
+        await ctx.send(embed=embed)
+    
+    @consent_group.command(name='grant')
+    async def consent_grant(self, ctx: commands.Context, requester: discord.Member):
+        """Grant consent to a specific user (use only if they asked you directly)"""
+        if ctx.author.id == requester.id:
+            await ctx.send("❌ You cannot grant consent to yourself.")
+            return
+        
+        # Check if already granted
+        if self.bot.consent_manager.has_consent(ctx.author.id):
+            await ctx.send("✅ You have already granted consent. Use `!!consent revoke` to revoke it first if needed.")
+            return
+        
+        # Grant consent
+        self.bot.consent_manager.grant_consent(
+            ctx.author.id, 
+            requester.id,
+            expires_days=90
+        )
+        
+        embed = discord.Embed(
+            title="✅ Consent Granted",
+            description=f"You have granted consent to **{requester.display_name}** for training data collection.",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="⚠️ Important:",
+            value="• This grants access to your messages for AI training\n• Consent expires in 90 days\n• You can revoke anytime with `!!consent revoke`",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+        
+        # Notify the requester
+        try:
+            await requester.send(f"✅ **Consent Granted!** {ctx.author.display_name} has granted you consent for training data collection. You can now use `!!generatetrainingdata {ctx.author.id}`.")
+        except:
+            pass  # Ignore if can't DM
+    
+    @consent_group.command(name='revoke')
+    async def consent_revoke(self, ctx: commands.Context):
+        """Revoke your consent for training data collection"""
+        consent_info = self.bot.consent_manager.get_consent_info(ctx.author.id)
+        
+        if not consent_info or consent_info.get('status') != 'granted':
+            await ctx.send("❌ You have not granted consent, so there's nothing to revoke.")
+            return
+        
+        # Revoke consent
+        self.bot.consent_manager.revoke_consent(ctx.author.id)
+        
+        embed = discord.Embed(
+            title="❌ Consent Revoked",
+            description="Your consent for training data collection has been revoked.",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="What this means:",
+            value="• No new data will be collected from your messages\n• Previous consent requests will be denied\n• You can grant consent again later if you choose",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
 
 class DiscordTrainingDataGenerator:
     """Training data generator integrated with Discord bot"""
@@ -1750,6 +2561,360 @@ class DiscordTrainingDataGenerator:
         except:
             pass  # Ignore update errors
 
+class HelpCommands(commands.Cog):
+    """Help and information commands"""
+    
+    def __init__(self, bot: DeepDiscordBot):
+        self.bot = bot
+    
+    async def safe_send_embed(self, ctx, embed):
+        """Safely send an embed with fallback to plain text"""
+        try:
+            await ctx.send(embed=embed)
+        except discord.Forbidden:
+            # Fallback to plain text
+            content = f"**{embed.title}**\n"
+            if embed.description:
+                content += f"{embed.description}\n\n"
+            
+            for field in embed.fields:
+                content += f"**{field.name}**\n{field.value}\n\n"
+            
+            if embed.footer:
+                content += f"_{embed.footer.text}_"
+            
+            # Split if too long
+            if len(content) > 2000:
+                content = content[:1997] + "..."
+            
+            await ctx.send(content)
+    
+    @commands.command(name='help')
+    async def help_command(self, ctx: commands.Context, category: str = None):
+        """Show help information for bot commands"""
+        if category:
+            category = category.lower()
+            if category in ['message', 'messages', 'msg']:
+                await self.show_message_help(ctx)
+            elif category in ['training', 'data', 'ai']:
+                await self.show_training_help(ctx)
+            elif category in ['admin', 'administration']:
+                await self.show_admin_help(ctx)
+            elif category in ['consent', 'privacy']:
+                await self.show_consent_help(ctx)
+            else:
+                await ctx.send(f"❌ Unknown help category: `{category}`. Use `!!help` to see all categories.")
+        else:
+            await self.show_main_help(ctx)
+    
+    async def show_main_help(self, ctx: commands.Context):
+        """Show main help overview"""
+        embed = discord.Embed(
+            title="🤖 DeepDiscord Bot Help",
+            description="A sophisticated Discord bot for message analysis and AI training data generation",
+            color=0x00ff00
+        )
+        
+        embed.add_field(
+            name="📋 Command Categories",
+            value=(
+                "• `!!help messages` - Message analysis and history commands\n"
+                "• `!!help training` - AI training data generation commands\n"
+                "• `!!help consent` - Privacy and consent management\n"
+                "• `!!help admin` - Administrative commands (Admin only)"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🚀 Quick Start",
+            value=(
+                "• `!!userhistory @user` - Analyze user's message patterns\n"
+                "• `!!generatetrainingdata <user_id>` - Generate AI training data\n"
+                "• `!!consent` - Check your consent status"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="ℹ️ Important Notes",
+            value=(
+                "• All commands use `!!` prefix to avoid conflicts\n"
+                "• Privacy-first: Explicit consent required for data collection\n"
+                "• Admin controls: Channel restrictions and user authorization"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Use !!help <category> for detailed command information")
+        await self.safe_send_embed(ctx, embed)
+    
+    async def show_message_help(self, ctx: commands.Context):
+        """Show message analysis commands help"""
+        embed = discord.Embed(
+            title="📋 Message Analysis Commands",
+            description="Commands for analyzing Discord messages and user patterns",
+            color=0x3498db
+        )
+        
+        embed.add_field(
+            name="🔍 User Analysis",
+            value=(
+                "`!!userhistory @user` - Comprehensive user message analysis\n"
+                "`!!fragment @user` - Show message fragment detection results\n"
+                "`!!relationships @user` - Display message relationship patterns"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="💾 Data Management",
+            value=(
+                "`!!save <user_id>` - Save user message analysis to file\n"
+                "`!!yes` - Quick save for the most recent analysis\n"
+                "`!!combined <message_id>` - Show combined fragment content"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📊 Features",
+            value=(
+                "• **Fragment Detection**: Automatically combines rapid-fire messages\n"
+                "• **Response Tracking**: Identifies replies and conversation chains\n"
+                "• **Pattern Analysis**: Communication habits and activity patterns\n"
+                "• **Export Ready**: JSON format for further analysis"
+            ),
+            inline=False
+        )
+        
+        await self.safe_send_embed(ctx, embed)
+    
+    async def show_training_help(self, ctx: commands.Context):
+        """Show training data commands help"""
+        embed = discord.Embed(
+            title="🎓 AI Training Data Commands",
+            description="Generate training datasets from Discord conversations",
+            color=0xe74c3c
+        )
+        
+        embed.add_field(
+            name="🤖 Data Generation",
+            value=(
+                "`!!generatetrainingdata <user_id> [days]` - Generate Q&A training pairs\n"
+                "• **user_id**: Discord user ID to analyze\n"
+                "• **days**: How many days back to analyze (default: 30, max: 365)"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔐 Authorization Required",
+            value=(
+                "• **Administrators**: Always authorized\n"
+                f"• **Owner**: <@{self.bot.authorization_manager.owner_user_id}> (always authorized)\n"
+                "• **Others**: Must be authorized by admin (`!!authorize add @user`)"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📊 Output Files",
+            value=(
+                "• **High Confidence**: Response pairs with 80%+ confidence\n"
+                "• **Medium Confidence**: Response pairs with 50-80% confidence\n"
+                "• **All Responses**: Complete dataset with all detected pairs"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="✨ Features",
+            value=(
+                "• **Smart Response Detection**: Temporal, content, and explicit reply analysis\n"
+                "• **Privacy Protection**: Requires explicit user consent\n"
+                "• **Fragment Integration**: Includes combined fragmented messages\n"
+                "• **Progress Tracking**: Real-time status updates during generation"
+            ),
+            inline=False
+        )
+        
+        await self.safe_send_embed(ctx, embed)
+    
+    async def show_consent_help(self, ctx: commands.Context):
+        """Show consent and privacy commands help"""
+        embed = discord.Embed(
+            title="🔒 Privacy & Consent Management",
+            description="Control how your Discord data is used for training",
+            color=0x9b59b6
+        )
+        
+        embed.add_field(
+            name="👤 Personal Consent",
+            value=(
+                "`!!consent` - Check your current consent status\n"
+                "`!!consent revoke` - Withdraw your consent for data collection\n"
+                "`!!consent grant @requester` - Grant consent to someone who asked"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="👥 Consent Information",
+            value=(
+                "`!!consent status [@user]` - Check consent status (yours or others)\n"
+                "• Shows current status, expiration, and grant history"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🛡️ Privacy Protections",
+            value=(
+                "• **Explicit Consent Required**: No data collection without permission\n"
+                "• **Time-Limited**: Consent expires after 90 days\n"
+                "• **Revocable**: Can withdraw consent anytime\n"
+                "• **Transparent**: Clear audit trail of all activities\n"
+                "• **DM Notifications**: Informed of all requests and decisions"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📋 How It Works",
+            value=(
+                "1. Someone runs `!!generatetrainingdata` for you\n"
+                "2. You receive a detailed DM with consent request\n"
+                "3. React with ✅ (accept) or ❌ (decline)\n"
+                "4. If accepted, training data generation begins automatically"
+            ),
+            inline=False
+        )
+        
+        await self.safe_send_embed(ctx, embed)
+    
+    async def show_admin_help(self, ctx: commands.Context):
+        """Show admin commands help (only for admins)"""
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("❌ Admin help is only available to administrators.")
+            return
+        
+        embed = discord.Embed(
+            title="🛡️ Administrative Commands",
+            description="Server management and bot configuration (Admin Only)",
+            color=0xf39c12
+        )
+        
+        embed.add_field(
+            name="👥 User Authorization",
+            value=(
+                "`!!authorize` - Show authorization management help\n"
+                "`!!authorize list` - List all authorized users\n"
+                "`!!authorize add @user` - Grant training data access\n"
+                "`!!authorize remove @user` - Remove training data access\n"
+                "`!!authorize check @user` - Check user's authorization status"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📺 Channel Management",
+            value=(
+                "`!!channels` - Show channel management help\n"
+                "`!!channels list` - Show allowed channels\n"
+                "`!!channels add #channel` - Allow bot in specific channel\n"
+                "`!!channels remove #channel` - Restrict bot from channel\n"
+                "`!!channels clear` - Remove all restrictions\n"
+                "`!!channels current` - Check current channel status"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔧 System Management",
+            value=(
+                "`!!save` - Save current message data to disk\n"
+                "`!!clear` - Clear message cache\n"
+                "`!!reload` - Reload bot cogs (hot reload)\n"
+                "`!!hotreload` - Full module reload"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⚡ Quick Setup",
+            value=(
+                "1. **Restrict channels**: `!!channels add #bot-commands`\n"
+                "2. **Authorize users**: `!!authorize add @trusted-user`\n"
+                "3. **Test setup**: `!!channels current` and `!!authorize list`"
+            ),
+            inline=False
+        )
+        
+        await self.safe_send_embed(ctx, embed)
+    
+    @commands.command(name='commands')
+    async def list_commands(self, ctx: commands.Context):
+        """Show a quick list of all available commands"""
+        embed = discord.Embed(
+            title="📝 Quick Command Reference",
+            description="All available DeepDiscord commands",
+            color=0x2ecc71
+        )
+        
+        # Message Commands
+        message_cmds = [
+            "!!userhistory @user", "!!fragment @user", "!!relationships @user",
+            "!!save <user_id>", "!!yes", "!!combined <message_id>"
+        ]
+        embed.add_field(
+            name="📋 Message Analysis",
+            value="\n".join(f"• {cmd}" for cmd in message_cmds),
+            inline=False
+        )
+        
+        # Training Commands
+        training_cmds = ["!!generatetrainingdata <user_id> [days]"]
+        embed.add_field(
+            name="🎓 Training Data",
+            value="\n".join(f"• {cmd}" for cmd in training_cmds),
+            inline=False
+        )
+        
+        # Consent Commands
+        consent_cmds = [
+            "!!consent", "!!consent status [@user]", 
+            "!!consent grant @user", "!!consent revoke"
+        ]
+        embed.add_field(
+            name="🔒 Privacy & Consent",
+            value="\n".join(f"• {cmd}" for cmd in consent_cmds),
+            inline=False
+        )
+        
+        # Admin Commands (only show if admin)
+        if ctx.author.guild_permissions.administrator:
+            admin_cmds = [
+                "!!authorize [add/remove/list/check]", "!!channels [add/remove/list/clear]",
+                "!!save", "!!clear", "!!reload", "!!hotreload"
+            ]
+            embed.add_field(
+                name="🛡️ Admin Commands",
+                value="\n".join(f"• {cmd}" for cmd in admin_cmds),
+                inline=False
+            )
+        
+        # Help Commands
+        help_cmds = ["!!help [category]", "!!commands"]
+        embed.add_field(
+            name="❓ Help & Info",
+            value="\n".join(f"• {cmd}" for cmd in help_cmds),
+            inline=False
+        )
+        
+        embed.set_footer(text="Use !!help <category> for detailed information about each command group")
+        await self.safe_send_embed(ctx, embed)
+
 class AdminCommands(commands.Cog):
     """Administrative commands"""
     
@@ -1779,6 +2944,315 @@ class AdminCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error clearing cache: {e}")
             await ctx.send("❌ Error clearing cache.")
+    
+    @commands.group(name='authorize')
+    @commands.has_permissions(administrator=True)
+    async def authorize(self, ctx: commands.Context):
+        """Manage user authorization for training data commands (Admin only)"""
+        if ctx.invoked_subcommand is None:
+            embed = discord.Embed(
+                title="🔐 Authorization Management",
+                description="Manage who can use training data commands",
+                color=0x00ff00
+            )
+            embed.add_field(
+                name="Commands",
+                value=(
+                    "• `!!authorize list` - Show authorized users\n"
+                    "• `!!authorize add @user` - Authorize a user\n"
+                    "• `!!authorize remove @user` - Remove authorization\n"
+                    "• `!!authorize check @user` - Check user's authorization status"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name="Notes",
+                value=(
+                    f"• <@{self.bot.authorization_manager.owner_user_id}> is always authorized\n"
+                    "• Administrators are always authorized\n"
+                    "• Authorization is required for `!!generatetrainingdata`"
+                ),
+                inline=False
+            )
+            await ctx.send(embed=embed)
+    
+    @authorize.command(name='list')
+    async def authorize_list(self, ctx: commands.Context):
+        """List all authorized users"""
+        authorized_users = self.bot.authorization_manager.get_authorized_users()
+        
+        embed = discord.Embed(
+            title="🔐 Authorized Users",
+            description=f"Users authorized to use training data commands",
+            color=0x00ff00
+        )
+        
+        user_list = []
+        for user_id in authorized_users:
+            try:
+                user = ctx.bot.get_user(user_id) or await ctx.bot.fetch_user(user_id)
+                if user_id == self.bot.authorization_manager.owner_user_id:
+                    user_list.append(f"👑 {user.display_name} ({user_id}) - Owner")
+                else:
+                    user_list.append(f"✅ {user.display_name} ({user_id})")
+            except:
+                user_list.append(f"❓ Unknown User ({user_id})")
+        
+        if user_list:
+            embed.add_field(
+                name=f"Authorized Users ({len(user_list)})",
+                value="\n".join(user_list),
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="No Additional Users",
+                value="Only admins and the owner are currently authorized",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+    
+    @authorize.command(name='add')
+    async def authorize_add(self, ctx: commands.Context, user: discord.Member):
+        """Authorize a user to use training data commands"""
+        if self.bot.authorization_manager.authorize_user(user.id):
+            embed = discord.Embed(
+                title="✅ User Authorized",
+                description=f"{user.display_name} can now use training data commands",
+                color=0x00ff00
+            )
+            embed.add_field(name="User", value=f"{user.mention} ({user.id})", inline=False)
+            await ctx.send(embed=embed)
+            
+            # Notify the user
+            try:
+                await user.send(f"🎉 You've been authorized to use training data commands in **{ctx.guild.name}**! You can now use `!!generatetrainingdata` and related commands.")
+            except:
+                pass  # User might have DMs disabled
+        else:
+            await ctx.send(f"ℹ️ {user.display_name} is already authorized.")
+    
+    @authorize.command(name='remove')
+    async def authorize_remove(self, ctx: commands.Context, user: discord.Member):
+        """Remove authorization from a user"""
+        if user.id == self.bot.authorization_manager.owner_user_id:
+            await ctx.send("❌ Cannot remove authorization from the owner.")
+            return
+        
+        if self.bot.authorization_manager.deauthorize_user(user.id):
+            embed = discord.Embed(
+                title="🚫 Authorization Removed",
+                description=f"{user.display_name} can no longer use training data commands",
+                color=0xff6b6b
+            )
+            embed.add_field(name="User", value=f"{user.mention} ({user.id})", inline=False)
+            await ctx.send(embed=embed)
+            
+            # Notify the user
+            try:
+                await user.send(f"📢 Your authorization to use training data commands in **{ctx.guild.name}** has been removed.")
+            except:
+                pass  # User might have DMs disabled
+        else:
+            await ctx.send(f"ℹ️ {user.display_name} was not authorized.")
+    
+    @authorize.command(name='check')
+    async def authorize_check(self, ctx: commands.Context, user: discord.Member):
+        """Check if a user is authorized"""
+        is_admin = user.guild_permissions.administrator
+        is_authorized = self.bot.authorization_manager.is_authorized(user.id, is_admin)
+        
+        embed = discord.Embed(
+            title=f"🔍 Authorization Status: {user.display_name}",
+            color=0x00ff00 if is_authorized else 0xff6b6b
+        )
+        
+        embed.add_field(name="User", value=f"{user.mention} ({user.id})", inline=False)
+        embed.add_field(name="Authorized", value="✅ Yes" if is_authorized else "❌ No", inline=True)
+        
+        reasons = []
+        if user.id == self.bot.authorization_manager.owner_user_id:
+            reasons.append("👑 Owner")
+        if is_admin:
+            reasons.append("🛡️ Administrator")
+        if user.id in self.bot.authorization_manager.authorized_users:
+            reasons.append("📝 Manually authorized")
+        
+        if reasons:
+            embed.add_field(name="Reason", value=" • ".join(reasons), inline=True)
+        
+        await ctx.send(embed=embed)
+    
+    @commands.group(name='channels')
+    @commands.has_permissions(administrator=True)
+    async def channels(self, ctx: commands.Context):
+        """Manage which channels the bot can post in (Admin only)"""
+        if ctx.invoked_subcommand is None:
+            embed = discord.Embed(
+                title="📺 Channel Management",
+                description="Control which channels the bot can post in",
+                color=0x00ff00
+            )
+            embed.add_field(
+                name="Commands",
+                value=(
+                    "• `!!channels list` - Show allowed channels\n"
+                    "• `!!channels add #channel` - Allow bot to post in channel\n"
+                    "• `!!channels remove #channel` - Restrict bot from channel\n"
+                    "• `!!channels clear` - Allow bot in all channels (remove restrictions)\n"
+                    "• `!!channels current` - Check if current channel is allowed"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name="Notes",
+                value=(
+                    "• By default, bot can post in all channels\n"
+                    "• Adding restrictions limits bot to only specified channels\n"
+                    "• Bot will silently ignore commands in restricted channels"
+                ),
+                inline=False
+            )
+            await ctx.send(embed=embed)
+    
+    @channels.command(name='list')
+    async def channels_list(self, ctx: commands.Context):
+        """List all allowed channels for this server"""
+        allowed_channels = self.bot.channel_manager.get_allowed_channels(ctx.guild.id)
+        
+        embed = discord.Embed(
+            title="📺 Allowed Channels",
+            color=0x00ff00
+        )
+        
+        if not allowed_channels:
+            embed.description = "🔓 **No restrictions set** - Bot can post in all channels"
+            embed.add_field(
+                name="Current Policy",
+                value="Bot will respond to commands in any channel",
+                inline=False
+            )
+        else:
+            embed.description = f"🔒 **Restricted to {len(allowed_channels)} channels**"
+            
+            channel_list = []
+            for channel_id in allowed_channels:
+                try:
+                    channel = ctx.guild.get_channel(channel_id)
+                    if channel:
+                        channel_list.append(f"• {channel.mention} ({channel.name})")
+                    else:
+                        channel_list.append(f"• ❓ Unknown Channel ({channel_id})")
+                except:
+                    channel_list.append(f"• ❓ Invalid Channel ({channel_id})")
+            
+            if channel_list:
+                embed.add_field(
+                    name="Allowed Channels",
+                    value="\n".join(channel_list),
+                    inline=False
+                )
+        
+        await ctx.send(embed=embed)
+    
+    @channels.command(name='add')
+    async def channels_add(self, ctx: commands.Context, channel: discord.TextChannel):
+        """Allow the bot to post in a specific channel"""
+        if self.bot.channel_manager.add_allowed_channel(ctx.guild.id, channel.id):
+            embed = discord.Embed(
+                title="✅ Channel Added",
+                description=f"Bot can now post in {channel.mention}",
+                color=0x00ff00
+            )
+            embed.add_field(name="Channel", value=f"{channel.mention} ({channel.name})", inline=False)
+            
+            # Show current restriction status
+            allowed_count = len(self.bot.channel_manager.get_allowed_channels(ctx.guild.id))
+            embed.add_field(
+                name="Status", 
+                value=f"Bot is now restricted to {allowed_count} specific channel(s)",
+                inline=False
+            )
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send(f"ℹ️ {channel.mention} is already in the allowed channels list.")
+    
+    @channels.command(name='remove')
+    async def channels_remove(self, ctx: commands.Context, channel: discord.TextChannel):
+        """Remove a channel from the allowed list"""
+        if self.bot.channel_manager.remove_allowed_channel(ctx.guild.id, channel.id):
+            embed = discord.Embed(
+                title="🚫 Channel Removed",
+                description=f"Bot can no longer post in {channel.mention}",
+                color=0xff6b6b
+            )
+            embed.add_field(name="Channel", value=f"{channel.mention} ({channel.name})", inline=False)
+            
+            # Show current restriction status
+            allowed_channels = self.bot.channel_manager.get_allowed_channels(ctx.guild.id)
+            if allowed_channels:
+                embed.add_field(
+                    name="Status", 
+                    value=f"Bot is still restricted to {len(allowed_channels)} channel(s)",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="Status", 
+                    value="No restrictions - Bot can now post in all channels",
+                    inline=False
+                )
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send(f"ℹ️ {channel.mention} was not in the allowed channels list.")
+    
+    @channels.command(name='clear')
+    async def channels_clear(self, ctx: commands.Context):
+        """Remove all channel restrictions (allow bot in all channels)"""
+        if self.bot.channel_manager.clear_allowed_channels(ctx.guild.id):
+            embed = discord.Embed(
+                title="🔓 Restrictions Cleared",
+                description="Bot can now post in all channels",
+                color=0x00ff00
+            )
+            embed.add_field(
+                name="Status", 
+                value="All channel restrictions have been removed",
+                inline=False
+            )
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send("ℹ️ No channel restrictions were set.")
+    
+    @channels.command(name='current')
+    async def channels_current(self, ctx: commands.Context):
+        """Check if the current channel is allowed"""
+        is_allowed = self.bot.channel_manager.is_channel_allowed(ctx.guild.id, ctx.channel.id)
+        
+        embed = discord.Embed(
+            title="🔍 Current Channel Status",
+            color=0x00ff00 if is_allowed else 0xff6b6b
+        )
+        
+        embed.add_field(name="Channel", value=f"{ctx.channel.mention} ({ctx.channel.name})", inline=False)
+        embed.add_field(name="Status", value="✅ Allowed" if is_allowed else "❌ Restricted", inline=True)
+        
+        allowed_channels = self.bot.channel_manager.get_allowed_channels(ctx.guild.id)
+        if allowed_channels:
+            embed.add_field(
+                name="Restriction Policy", 
+                value=f"Bot limited to {len(allowed_channels)} specific channel(s)",
+                inline=True
+            )
+        else:
+            embed.add_field(
+                name="Restriction Policy", 
+                value="No restrictions (all channels allowed)",
+                inline=True
+            )
+        
+        await ctx.send(embed=embed)
 
 async def main():
     """Main function to run the bot"""
