@@ -76,6 +76,89 @@ lora_r = 32
 lora_alpha = 64
 ```
 
+## 🎭 Personality System
+
+The training module supports multi-personality emulation with three strategies:
+
+### 1. Unified Strategy
+Combines all user data into a single model without personality distinction.
+
+### 2. Instruction-Based Strategy (Recommended)
+Adds personality context to training data using instruction templates:
+- Format: `"Respond as {personality_name}: {message}"`
+- Channel context: `"Channel: {channel} | Respond as {personality_name}: {message}"`
+- Single model learns to switch personalities based on instructions
+
+### 3. Multiple LoRA Adapters
+Creates separate LoRA adapters for each personality:
+- Base model handles general language understanding
+- Individual adapters specialize in specific personality traits
+- Allows fine-grained personality control and mixing
+
+### Personality Profiles
+Personalities are discovered from actual Discord training data based on user IDs:
+- Each user with sufficient message data becomes a trainable personality
+- Human-readable names are assigned for training and Discord commands
+- Discord usernames may change, but user IDs remain constant for tracking
+
+### Privacy & Consent
+- Respects user consent settings from Discord bot
+- Anonymizes users without consent as "Anonymous"
+- Excludes non-consenting users if configured
+
+### Personality Discovery & Management
+Discovery process:
+1. Run preprocessing to discover personalities from training data
+2. Use management script to assign human-readable names
+3. Configure personality parameters for training
+
+```bash
+# Discover personalities from training data
+python training_module/scripts/manage_personalities.py --discover
+
+# Interactively update personality names
+python training_module/scripts/manage_personalities.py --update-names
+
+# List current personalities
+python training_module/scripts/manage_personalities.py --list
+
+# Add personality manually
+python training_module/scripts/manage_personalities.py --add-personality USER_ID "PersonalityName" "Description"
+```
+
+## 🚀 Quick Start (with Personality Support)
+
+### 1. Data Preprocessing
+```bash
+# Basic instruction-based personality training
+python training_module/scripts/preprocess_personality_data.py --strategy instruction_based
+
+# Multiple LoRA adapters for different personalities  
+python training_module/scripts/preprocess_personality_data.py --strategy multiple_lora
+
+# Custom input/output directories
+python training_module/scripts/preprocess_personality_data.py --input-dir ../discord_bot/results --output-dir ./data/processed
+```
+
+### 2. Training
+```bash
+python training_module/scripts/train.py --config training_module/config/training_config.py
+```
+
+### 3. Evaluation
+```bash
+python training_module/scripts/evaluate.py --model training_module/checkpoints/best_model.pt
+```
+
+## 🔧 Configuration
+
+Training parameters can be configured in:
+- `config/training_config.py` - Learning rate, batch size, epochs, etc.
+- `config/model_config.py` - Model architecture, hidden sizes, layers, etc.
+- `config/data_config.py` - Data paths, preprocessing settings, etc.
+- `config/personality_config.py` - Multi-personality emulation settings
+- `config/qlora_config.py` - QLoRA 4-bit quantization settings
+
 ## 🔧 Advanced Features
 
 ### Real-time Memory Monitoring

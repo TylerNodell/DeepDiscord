@@ -14,6 +14,7 @@ class DataConfig:
     input_dir: str = "../discord_bot/results"  # Points to discord_bot/results where training data is stored
     processed_dir: str = "./data/processed"
     cache_dir: str = "./data/cache"
+    consent_file: str = "../discord_bot/discord_data/user_consents.json"
     
     # Data filtering
     min_message_length: int = 10
@@ -42,9 +43,15 @@ class DataConfig:
     augmentation_probability: float = 0.3
     
     # Conversation formatting
-    conversation_format: str = "dialo_gpt"  # dialo_gpt, instructional
+    conversation_format: str = "chatml"  # chatml, dialo_gpt, instructional
     include_user_context: bool = True
     max_context_turns: int = 3
+    
+    # Personality integration
+    use_personality_system: bool = True
+    personality_config_file: str = "./config/personality_config.py"
+    balance_personality_samples: bool = True
+    exclude_anonymous_users: bool = True
     
     # File handling
     supported_formats: List[str] = None

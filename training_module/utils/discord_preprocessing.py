@@ -1,218 +1,494 @@
 """
-Discord-specific data preprocessing for training data.
+Discord-specific data preprocessing for multi-personality training.
+Handles personality-based formatting, consent checking, and Discord content cleaning.
 Based on the reference guide for optimal Discord conversation handling.
 """
 
-import re
 import json
-import logging
-from typing import List, Dict, Any, Tuple, Optional
+import re
+import zipfile
 from pathlib import Path
+from typing import Dict, List, Tuple, Optional, Set, Any
+from dataclasses import dataclass
+import logging
+
+try:
+    from ..config.personality_config import PersonalityConfig, PersonalityStrategy
+except ImportError:
+    # Fallback for direct script execution
+    import sys
+    sys.path.append(str(Path(__file__).parent.parent))
+    from config.personality_config import PersonalityConfig, PersonalityStrategy
 
 logger = logging.getLogger(__name__)
 
 
-def clean_discord_data(text: str) -> str:
-    """
-    Clean Discord-specific formatting from text.
-    
-    Args:
-        text: Raw Discord message text
-        
-    Returns:
-        Cleaned text suitable for training
-    """
-    if not text:
-        return ""
-    
-    # Remove user mentions (@user or <@userid>)
-    text = re.sub(r'<@!?\d+>', '', text)
-    text = re.sub(r'@\w+', '', text)
-    
-    # Remove channel mentions (#channel or <#channelid>)
-    text = re.sub(r'<#\d+>', '', text)
-    text = re.sub(r'#[\w-]+', '', text)
-    
-    # Remove role mentions (<@&roleid>)
-    text = re.sub(r'<@&\d+>', '', text)
-    
-    # Remove custom emojis (<:name:id> or <a:name:id>)
-    text = re.sub(r'<a?:\w+:\d+>', '', text)
-    
-    # Remove timestamp mentions (<t:timestamp>)
-    text = re.sub(r'<t:\d+(?::[tTdDfFR])?>', '', text)
-    
-    # Clean up common Discord markdown (keep basic formatting)
-    # Remove triple backticks but keep content
-    text = re.sub(r'```(?:\w+\n)?(.*?)```', r'\1', text, flags=re.DOTALL)
-    
-    # Remove single backticks (inline code)
-    text = re.sub(r'`([^`]+)`', r'\1', text)
-    
-    # Clean excessive whitespace
-    text = re.sub(r'\s+', ' ', text)
-    text = text.strip()
-    
-    return text
+@dataclass
+class DiscordMessage:
+    """Represents a Discord message with metadata."""
+    content: str
+    username: str
+    display_name: str
+    user_id: Optional[str] = None
+    channel: Optional[str] = None
+    timestamp: Optional[str] = None
+    message_id: Optional[str] = None
+    confidence: float = 1.0
+    has_consent: bool = False
 
 
-def filter_training_pairs(pairs: List[Dict[str, Any]], 
-                         min_length: int = 10,
-                         max_length: int = 500,
-                         include_gifs: bool = True,
-                         include_links: bool = True) -> List[Dict[str, Any]]:
+@dataclass
+class ConversationPair:
+    """Represents a conversation pair for training."""
+    input_text: str
+    output_text: str
+    personality: Optional[str] = None
+    channel: Optional[str] = None
+    confidence: float = 1.0
+    metadata: Dict = None
+
+
+class DiscordPreprocessor:
     """
-    Filter and clean Discord training pairs for optimal training quality.
-    
-    Args:
-        pairs: List of conversation pairs from Discord bot
-        min_length: Minimum response length
-        max_length: Maximum response length
-        include_gifs: Whether to include GIF responses
-        include_links: Whether to include responses with links
-        
-    Returns:
-        Filtered and cleaned training pairs
+    Preprocesses Discord training data with personality-based formatting.
     """
-    filtered = []
-    stats = {
-        "original_count": len(pairs),
-        "too_short": 0,
-        "too_long": 0,
-        "empty_after_cleaning": 0,
-        "gif_responses": 0,
-        "link_responses": 0,
-        "final_count": 0
-    }
     
-    for pair in pairs:
-        # Extract and clean question/answer
-        question = clean_discord_data(pair.get('question', ''))
-        answer = clean_discord_data(pair.get('answer', ''))
+    def __init__(self, personality_config: PersonalityConfig):
+        self.config = personality_config
+        self.consent_cache: Dict[str, bool] = {}
         
-        # Skip if empty after cleaning
-        if not question or not answer:
-            stats["empty_after_cleaning"] += 1
-            continue
+        # Discord-specific patterns
+        self.mention_pattern = re.compile(r'<@!?(\d+)>')
+        self.channel_pattern = re.compile(r'<#(\d+)>')
+        self.emoji_pattern = re.compile(r'<a?:\w+:\d+>')
+        self.url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
         
-        # Check length constraints
-        if len(answer) < min_length:
-            stats["too_short"] += 1
-            continue
-            
-        if len(answer) > max_length:
-            stats["too_long"] += 1
-            continue
-        
-        # Check for GIFs (Tenor, GIPHY links)
-        is_gif = bool(re.search(r'https?://(tenor\.com|giphy\.com|cdn\.discordapp\.com.*\.gif)', answer))
-        if is_gif:
-            stats["gif_responses"] += 1
-            if not include_gifs:
-                continue
-        
-        # Check for links
-        has_links = bool(re.search(r'https?://\S+', answer))
-        if has_links:
-            stats["link_responses"] += 1
-            if not include_links:
-                continue
-        
-        # Preserve metadata and add cleaned content
-        filtered_pair = {
-            'question': question,
-            'answer': answer,
-            'metadata': pair.get('metadata', {}),
-            'original_question': pair.get('question', ''),
-            'original_answer': pair.get('answer', ''),
+        # Content cleaning patterns
+        self.unicode_replacements = {
+            '\ud83c\udfb8': '🎸',
+            '\u2019': "'",
+            '\u201c': '"',
+            '\u201d': '"',
+            '\u2013': '-',
+            '\u2014': '--',
+            '\u2026': '...',
         }
+    
+    def load_consent_data(self, consent_file: Path) -> Dict[str, bool]:
+        """Load user consent data from file."""
+        try:
+            if consent_file.exists():
+                with open(consent_file, 'r') as f:
+                    consent_data = json.load(f)
+                    return {str(user_id): data.get('has_consent', False) 
+                           for user_id, data in consent_data.items()}
+            return {}
+        except Exception as e:
+            logger.warning(f"Failed to load consent data: {e}")
+            return {}
+    
+    def clean_discord_content(self, content: str) -> str:
+        """Clean Discord-specific content and formatting."""
+        if not content:
+            return ""
         
-        # Add content type flags
-        filtered_pair['metadata']['is_gif'] = is_gif
-        filtered_pair['metadata']['has_links'] = has_links
-        filtered_pair['metadata']['cleaned_length'] = len(answer)
+        # Clean Unicode escape sequences
+        for old, new in self.unicode_replacements.items():
+            content = content.replace(old, new)
         
-        filtered.append(filtered_pair)
-    
-    stats["final_count"] = len(filtered)
-    
-    logger.info(f"📊 Discord Data Filtering Results:")
-    logger.info(f"   Original pairs: {stats['original_count']}")
-    logger.info(f"   Too short (< {min_length}): {stats['too_short']}")
-    logger.info(f"   Too long (> {max_length}): {stats['too_long']}")
-    logger.info(f"   Empty after cleaning: {stats['empty_after_cleaning']}")
-    logger.info(f"   GIF responses: {stats['gif_responses']}")
-    logger.info(f"   Link responses: {stats['link_responses']}")
-    logger.info(f"   Final pairs: {stats['final_count']}")
-    logger.info(f"   Retention rate: {stats['final_count']/stats['original_count']*100:.1f}%")
-    
-    return filtered
-
-
-def create_chat_dataset(discord_pairs: List[Dict[str, Any]], 
-                       system_prompt: Optional[str] = None) -> List[Dict[str, Any]]:
-    """
-    Convert Discord pairs to ChatML format for training.
-    
-    Args:
-        discord_pairs: Filtered Discord conversation pairs
-        system_prompt: Optional system prompt for the model
+        # Remove or replace Discord mentions
+        content = self.mention_pattern.sub('@user', content)
         
-    Returns:
-        Training data in ChatML format
-    """
-    training_data = []
+        # Remove or replace channel mentions
+        content = self.channel_pattern.sub('#channel', content)
+        
+        # Keep emojis for personality but clean malformed ones
+        content = re.sub(r'<:[^:]+:broken>', '', content)
+        
+        # Optional URL removal
+        if hasattr(self.config, 'remove_urls') and self.config.remove_urls:
+            content = self.url_pattern.sub('[URL]', content)
+        
+        # Normalize whitespace
+        content = re.sub(r'\s+', ' ', content).strip()
+        
+        return content
     
-    # Default system prompt for Discord bot personality
-    if system_prompt is None:
-        system_prompt = (
-            "You are a helpful and engaging Discord bot. Respond naturally to conversations "
-            "while being respectful and appropriate. Match the tone and style of Discord chat."
-        )
+    def is_quality_message(self, message: DiscordMessage) -> bool:
+        """Check if message meets quality thresholds."""
+        if not message.content or len(message.content.strip()) < 10:
+            return False
+        
+        # Check personality-specific quality threshold
+        if message.user_id:
+            personality = self.config.get_personality_by_user_id(message.user_id)
+            if personality:
+                return message.confidence >= personality.quality_threshold
+        
+        # Default quality check
+        return message.confidence >= 0.7
     
-    for pair in discord_pairs:
-        # Create messages in ChatML format
+    def format_for_personality(self, message: DiscordMessage, context_messages: List[DiscordMessage] = None) -> str:
+        """Format message according to personality strategy."""
+        
+        if self.config.strategy == PersonalityStrategy.UNIFIED:
+            # Simple unified approach - just return cleaned content
+            return self.clean_discord_content(message.content)
+        
+        elif self.config.strategy == PersonalityStrategy.INSTRUCTION_BASED:
+            # Add personality instruction using user ID lookup
+            personality = None
+            if message.user_id:
+                personality = self.config.get_personality_by_user_id(message.user_id)
+            
+            # Use personality name if available, otherwise use Discord username
+            name = personality.personality_name if personality else (message.display_name or message.username)
+            
+            if self.config.channel_context and message.channel:
+                formatted = self.config.channel_template.format(
+                    channel=message.channel,
+                    personality_name=name,
+                    message=self.clean_discord_content(message.content)
+                )
+            else:
+                formatted = self.config.instruction_template.format(
+                    personality_name=name,
+                    message=self.clean_discord_content(message.content)
+                )
+            
+            return formatted
+        
+        elif self.config.strategy == PersonalityStrategy.MULTIPLE_LORA:
+            # For multiple LoRA, use personality tags based on user ID
+            personality = None
+            if message.user_id:
+                personality = self.config.get_personality_by_user_id(message.user_id)
+            
+            if personality:
+                tag = f"[PERSONALITY:{personality.personality_name.upper()}]"
+                return f"{tag} {self.clean_discord_content(message.content)}"
+            else:
+                return self.clean_discord_content(message.content)
+        
+        return self.clean_discord_content(message.content)
+    
+    def create_conversation_pairs(self, messages: List[DiscordMessage]) -> List[ConversationPair]:
+        """Create conversation pairs from Discord messages."""
+        pairs = []
+        
+        # Group messages by conversation context (simplified)
+        for i in range(len(messages) - 1):
+            current_msg = messages[i]
+            next_msg = messages[i + 1]
+            
+            # Skip if either message doesn't meet quality standards
+            if not self.is_quality_message(current_msg) or not self.is_quality_message(next_msg):
+                continue
+            
+            # Skip if consent is required but not given
+            if self.config.require_consent:
+                if not current_msg.has_consent or not next_msg.has_consent:
+                    continue
+            
+            # Create conversation pair
+            input_text = self.format_for_personality(current_msg)
+            output_text = self.format_for_personality(next_msg)
+            
+            # Determine personality for the response using user ID
+            response_personality = None
+            if self.config.strategy != PersonalityStrategy.UNIFIED and next_msg.user_id:
+                personality = self.config.get_personality_by_user_id(next_msg.user_id)
+                if personality:
+                    response_personality = personality.personality_name
+            
+            pair = ConversationPair(
+                input_text=input_text,
+                output_text=output_text,
+                personality=response_personality,
+                channel=next_msg.channel,
+                confidence=min(current_msg.confidence, next_msg.confidence),
+                metadata={
+                    'input_user': current_msg.username,
+                    'output_user': next_msg.username,
+                    'user_id': next_msg.user_id,
+                    'timestamp': next_msg.timestamp,
+                    'message_id': next_msg.message_id
+                }
+            )
+            
+            pairs.append(pair)
+        
+        return pairs
+    
+    def balance_personality_samples(self, pairs: List[ConversationPair]) -> List[ConversationPair]:
+        """Balance samples across personalities according to config."""
+        if not self.config.balance_samples or self.config.strategy == PersonalityStrategy.UNIFIED:
+            return pairs
+        
+        # Group pairs by personality
+        personality_groups: Dict[str, List[ConversationPair]] = {}
+        unassigned = []
+        
+        for pair in pairs:
+            if pair.personality:
+                if pair.personality not in personality_groups:
+                    personality_groups[pair.personality] = []
+                personality_groups[pair.personality].append(pair)
+            else:
+                unassigned.append(pair)
+        
+        # Balance according to personality limits
+        balanced_pairs = []
+        
+        for personality_name, group_pairs in personality_groups.items():
+            personality = self.config.get_personality_by_name(personality_name)
+            if not personality:
+                balanced_pairs.extend(group_pairs)
+                continue
+            
+            # Sort by confidence and take best samples
+            group_pairs.sort(key=lambda x: x.confidence, reverse=True)
+            
+            # Respect min/max sample limits
+            if len(group_pairs) < personality.min_samples:
+                logger.warning(f"Personality '{personality_name}' has only {len(group_pairs)} samples, "
+                             f"minimum is {personality.min_samples}")
+                balanced_pairs.extend(group_pairs)
+            elif len(group_pairs) > personality.max_samples:
+                logger.info(f"Limiting personality '{personality_name}' to {personality.max_samples} samples "
+                           f"(had {len(group_pairs)})")
+                balanced_pairs.extend(group_pairs[:personality.max_samples])
+            else:
+                balanced_pairs.extend(group_pairs)
+        
+        # Add unassigned pairs
+        balanced_pairs.extend(unassigned)
+        
+        return balanced_pairs
+    
+    def convert_to_chatml(self, pairs: List[ConversationPair]) -> List[Dict]:
+        """Convert conversation pairs to ChatML format for training."""
+        chatml_data = []
+        
+        for pair in pairs:
+            if self.config.strategy == PersonalityStrategy.INSTRUCTION_BASED:
+                # For instruction-based, the personality info is already in the text
+                messages = [
+                    {"role": "user", "content": pair.input_text},
+                    {"role": "assistant", "content": pair.output_text}
+                ]
+            else:
+                # For other strategies, use system message for personality
+                system_content = "You are a helpful Discord bot assistant."
+                if pair.personality:
+                    personality = self.config.get_personality_by_name(pair.personality)
+                    if personality and personality.description:
+                        system_content = f"You are {personality.personality_name}. {personality.description}"
+                
+                messages = [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": pair.input_text},
+                    {"role": "assistant", "content": pair.output_text}
+                ]
+            
+            chatml_entry = {
+                "messages": messages,
+                "metadata": {
+                    "personality": pair.personality,
+                    "channel": pair.channel,
+                    "confidence": pair.confidence,
+                    **pair.metadata
+                }
+            }
+            
+            chatml_data.append(chatml_entry)
+        
+        return chatml_data
+    
+    def process_training_zip(self, zip_path: Path, consent_file: Path = None) -> List[Dict]:
+        """Process a training data ZIP file and return formatted data."""
+        logger.info(f"Processing training ZIP: {zip_path}")
+        
+        # Load consent data
+        if consent_file and consent_file.exists():
+            self.consent_cache = self.load_consent_data(consent_file)
+            logger.info(f"Loaded consent data for {len(self.consent_cache)} users")
+        
         messages = []
         
-        # Add system prompt if provided
-        if system_prompt:
-            messages.append({
-                "role": "system",
-                "content": system_prompt
-            })
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                for file_name in zip_ref.namelist():
+                    if file_name.endswith('.json'):
+                        with zip_ref.open(file_name) as file:
+                            try:
+                                data = json.load(file)
+                                file_messages = self._parse_training_data(data, file_name)
+                                messages.extend(file_messages)
+                                logger.info(f"Parsed {len(file_messages)} messages from {file_name}")
+                            except Exception as e:
+                                logger.error(f"Failed to parse {file_name}: {e}")
         
-        # Add user question
-        messages.append({
-            "role": "user", 
-            "content": pair['question']
-        })
+        except Exception as e:
+            logger.error(f"Failed to process ZIP file {zip_path}: {e}")
+            return []
         
-        # Add assistant response
-        messages.append({
-            "role": "assistant",
-            "content": pair['answer']
-        })
+        logger.info(f"Total messages parsed: {len(messages)}")
         
-        entry = {
-            "messages": messages,
-            "metadata": pair.get('metadata', {})
-        }
+        # Create conversation pairs
+        pairs = self.create_conversation_pairs(messages)
+        logger.info(f"Created {len(pairs)} conversation pairs")
         
-        training_data.append(entry)
+        # Balance samples across personalities
+        balanced_pairs = self.balance_personality_samples(pairs)
+        logger.info(f"Balanced to {len(balanced_pairs)} pairs across personalities")
+        
+        # Convert to ChatML format
+        chatml_data = self.convert_to_chatml(balanced_pairs)
+        logger.info(f"Converted to ChatML format: {len(chatml_data)} entries")
+        
+        return chatml_data
     
-    logger.info(f"✅ Created {len(training_data)} ChatML training examples")
-    return training_data
+    def _parse_training_data(self, data: Dict, source_file: str) -> List[DiscordMessage]:
+        """Parse training data from JSON structure."""
+        messages = []
+        
+        try:
+            # Handle different JSON structures
+            if 'conversations' in data:
+                conversations = data['conversations']
+            elif 'training_data' in data:
+                # Handle legacy format
+                pairs = data['training_data']
+                for pair in pairs:
+                    # Convert pair format to messages
+                    if 'question' in pair and 'answer' in pair:
+                        user_msg = DiscordMessage(
+                            content=pair['question'],
+                            username=pair.get('metadata', {}).get('input_user', 'User'),
+                            display_name=pair.get('metadata', {}).get('input_user', 'User'),
+                            user_id=pair.get('metadata', {}).get('user_id'),
+                            channel=pair.get('metadata', {}).get('channel'),
+                            confidence=pair.get('metadata', {}).get('confidence', 1.0)
+                        )
+                        messages.append(user_msg)
+                        
+                        bot_msg = DiscordMessage(
+                            content=pair['answer'],
+                            username='DeepDisc',
+                            display_name='DeepDisc',
+                            channel=pair.get('metadata', {}).get('channel'),
+                            confidence=pair.get('metadata', {}).get('confidence', 1.0)
+                        )
+                        messages.append(bot_msg)
+                return messages
+            elif isinstance(data, list):
+                conversations = data
+            else:
+                conversations = [data]
+            
+            for conv in conversations:
+                if 'messages' in conv:
+                    for msg_data in conv['messages']:
+                        message = self._create_discord_message(msg_data, source_file)
+                        if message:
+                            messages.append(message)
+                elif 'user_message' in conv and 'ai_response' in conv:
+                    # Handle pair format
+                    user_msg = self._create_discord_message(conv['user_message'], source_file)
+                    ai_msg = self._create_discord_message(conv['ai_response'], source_file)
+                    if user_msg:
+                        messages.append(user_msg)
+                    if ai_msg:
+                        messages.append(ai_msg)
+        
+        except Exception as e:
+            logger.error(f"Failed to parse messages from {source_file}: {e}")
+        
+        return messages
+    
+    def _create_discord_message(self, msg_data: Dict, source: str) -> Optional[DiscordMessage]:
+        """Create DiscordMessage from parsed data."""
+        try:
+            # Extract basic fields
+            content = msg_data.get('content') or msg_data.get('message', '')
+            username = msg_data.get('username') or msg_data.get('user', '')
+            
+            if not content or not username:
+                return None
+            
+            # Check consent
+            user_id = msg_data.get('user_id')
+            has_consent = True  # Default to True for backward compatibility
+            
+            if self.config.require_consent and user_id:
+                has_consent = self.consent_cache.get(str(user_id), False)
+                if not has_consent and self.config.exclude_anonymous:
+                    return None
+            
+            # Anonymize if no consent
+            display_name = username
+            if not has_consent:
+                display_name = "Anonymous"
+                username = "Anonymous"
+            
+            message = DiscordMessage(
+                content=content,
+                username=username,
+                display_name=display_name,
+                user_id=user_id,
+                channel=msg_data.get('channel'),
+                timestamp=msg_data.get('timestamp'),
+                message_id=msg_data.get('message_id'),
+                confidence=msg_data.get('confidence', 1.0),
+                has_consent=has_consent
+            )
+            
+            return message
+            
+        except Exception as e:
+            logger.error(f"Failed to create message from {source}: {e}")
+            return None
+    
+    def get_preprocessing_stats(self, chatml_data: List[Dict]) -> Dict:
+        """Get statistics about the preprocessing results."""
+        personality_counts = {}
+        channel_counts = {}
+        total_chars = 0
+        
+        for entry in chatml_data:
+            # Count by personality
+            personality = entry['metadata'].get('personality', 'Unknown')
+            personality_counts[personality] = personality_counts.get(personality, 0) + 1
+            
+            # Count by channel
+            channel = entry['metadata'].get('channel', 'Unknown')
+            channel_counts[channel] = channel_counts.get(channel, 0) + 1
+            
+            # Count characters
+            for message in entry['messages']:
+                if message['role'] in ['user', 'assistant']:
+                    total_chars += len(message['content'])
+        
+        return {
+            'total_entries': len(chatml_data),
+            'personality_distribution': personality_counts,
+            'channel_distribution': channel_counts,
+            'total_characters': total_chars,
+            'average_chars_per_entry': total_chars / len(chatml_data) if chatml_data else 0
+        }
+
+
+# Legacy functions for backward compatibility
+def clean_discord_data(text: str) -> str:
+    """Legacy function - use DiscordPreprocessor.clean_discord_content instead."""
+    preprocessor = DiscordPreprocessor(PersonalityConfig())
+    return preprocessor.clean_discord_content(text)
 
 
 def load_discord_training_data(data_path: str) -> List[Dict[str, Any]]:
     """
     Load Discord training data from ZIP or JSON files.
-    
-    Args:
-        data_path: Path to Discord training data (ZIP or JSON)
-        
-    Returns:
-        List of conversation pairs
     """
     data_path = Path(data_path)
     
@@ -270,107 +546,3 @@ def load_discord_training_data(data_path: str) -> List[Dict[str, Any]]:
     
     logger.info(f"📊 Total pairs loaded: {len(all_pairs)}")
     return all_pairs
-
-
-def create_training_split(data: List[Dict[str, Any]], 
-                         train_ratio: float = 0.9,
-                         val_ratio: float = 0.1,
-                         seed: int = 42) -> Tuple[List[Dict], List[Dict]]:
-    """
-    Split data into training and validation sets.
-    
-    Args:
-        data: Training data
-        train_ratio: Ratio for training set
-        val_ratio: Ratio for validation set  
-        seed: Random seed for reproducibility
-        
-    Returns:
-        Tuple of (train_data, val_data)
-    """
-    import random
-    
-    assert abs(train_ratio + val_ratio - 1.0) < 1e-6, "Ratios must sum to 1.0"
-    
-    # Shuffle data with seed
-    random.seed(seed)
-    data_copy = data.copy()
-    random.shuffle(data_copy)
-    
-    # Calculate split point
-    train_size = int(len(data_copy) * train_ratio)
-    
-    train_data = data_copy[:train_size]
-    val_data = data_copy[train_size:]
-    
-    logger.info(f"📊 Data split: Train={len(train_data)}, Val={len(val_data)}")
-    
-    return train_data, val_data
-
-
-def analyze_dataset_quality(pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Analyze the quality and characteristics of Discord training data.
-    
-    Args:
-        pairs: Training pairs to analyze
-        
-    Returns:
-        Analysis results
-    """
-    if not pairs:
-        return {}
-    
-    # Length statistics
-    question_lengths = [len(p['question']) for p in pairs]
-    answer_lengths = [len(p['answer']) for p in pairs]
-    
-    # Content analysis
-    gif_count = sum(1 for p in pairs if p.get('metadata', {}).get('is_gif', False))
-    link_count = sum(1 for p in pairs if p.get('metadata', {}).get('has_links', False))
-    
-    # Confidence distribution (if available)
-    confidences = []
-    for p in pairs:
-        conf = p.get('metadata', {}).get('confidence')
-        if conf is not None:
-            confidences.append(conf)
-    
-    analysis = {
-        "total_pairs": len(pairs),
-        "question_stats": {
-            "avg_length": sum(question_lengths) / len(question_lengths),
-            "min_length": min(question_lengths),
-            "max_length": max(question_lengths),
-        },
-        "answer_stats": {
-            "avg_length": sum(answer_lengths) / len(answer_lengths),
-            "min_length": min(answer_lengths),
-            "max_length": max(answer_lengths),
-        },
-        "content_types": {
-            "gif_responses": gif_count,
-            "link_responses": link_count,
-            "text_only": len(pairs) - gif_count - link_count,
-        },
-        "confidence_stats": {
-            "available": len(confidences),
-            "avg_confidence": sum(confidences) / len(confidences) if confidences else 0,
-            "high_confidence": sum(1 for c in confidences if c >= 0.8),
-            "medium_confidence": sum(1 for c in confidences if 0.5 <= c < 0.8),
-            "low_confidence": sum(1 for c in confidences if c < 0.5),
-        } if confidences else None
-    }
-    
-    logger.info(f"📈 Dataset Quality Analysis:")
-    logger.info(f"   Total pairs: {analysis['total_pairs']}")
-    logger.info(f"   Avg question length: {analysis['question_stats']['avg_length']:.1f}")
-    logger.info(f"   Avg answer length: {analysis['answer_stats']['avg_length']:.1f}")
-    logger.info(f"   GIF responses: {gif_count}")
-    logger.info(f"   Link responses: {link_count}")
-    
-    if analysis['confidence_stats']:
-        logger.info(f"   Avg confidence: {analysis['confidence_stats']['avg_confidence']:.3f}")
-        logger.info(f"   High confidence: {analysis['confidence_stats']['high_confidence']}")
-    
-    return analysis

@@ -1,4 +1,4 @@
-# Training Module Requirements - Optimized for Dolphin-2.9-Llama-3-8B
+# Training Module Requirements - Optimized for Dolphin-2.9-Llama-3-8B + Personality System
 # Configuration B: Balanced (12-14GB VRAM)
 
 # Core ML/AI frameworks - Updated for QLoRA and Unsloth
@@ -25,6 +25,7 @@ tqdm>=4.65.0
 wandb>=0.15.0  # Optional: experiment tracking
 tensorboard>=2.13.0  # Optional: logging
 psutil>=5.9.0  # For memory monitoring
+GPUtil>=1.4.0  # GPU monitoring
 
 # Text processing (Discord-specific)
 nltk>=3.8.0
