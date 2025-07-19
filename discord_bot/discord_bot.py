@@ -274,7 +274,9 @@ class ConsentManager:
         
         self.consents[str(user_id)] = consent_data
         self.save_consents()
-        logger.info(f"Consent granted for user {user_id}")
+        logger.info(f"🔒 CONSENT GRANTED: User {user_id} by requester {requester_id}")
+        if expires_days:
+            logger.info(f"   ⏰ Expires in {expires_days} days")
     
     def revoke_consent(self, user_id: int):
         """Revoke consent for user"""
@@ -282,7 +284,7 @@ class ConsentManager:
             self.consents[str(user_id)]['status'] = 'revoked'
             self.consents[str(user_id)]['revoked_at'] = datetime.now().isoformat()
             self.save_consents()
-            logger.info(f"Consent revoked for user {user_id}")
+            logger.info(f"🔒 CONSENT REVOKED: User {user_id}")
     
     def get_consent_info(self, user_id: int) -> Optional[Dict]:
         """Get detailed consent information for user"""
@@ -370,18 +372,23 @@ class AuthorizationManager:
         if user_id not in self.authorized_users:
             self.authorized_users.add(user_id)
             self.save_authorized_users()
+            logger.info(f"🔐 USER AUTHORIZED: {user_id} for training data commands")
             return True
+        logger.info(f"🔐 USER ALREADY AUTHORIZED: {user_id}")
         return False
     
     def deauthorize_user(self, user_id: int) -> bool:
         """Deauthorize a user (cannot deauthorize owner)"""
         if user_id == self.owner_user_id:
+            logger.warning(f"🔐 CANNOT DEAUTHORIZE OWNER: {user_id}")
             return False
         
         if user_id in self.authorized_users:
             self.authorized_users.remove(user_id)
             self.save_authorized_users()
+            logger.info(f"🔐 USER DEAUTHORIZED: {user_id} from training data commands")
             return True
+        logger.info(f"🔐 USER NOT AUTHORIZED: {user_id} (cannot deauthorize)")
         return False
     
     def get_authorized_users(self) -> List[int]:
@@ -447,7 +454,9 @@ class ChannelManager:
         if channel_id not in self.allowed_channels[guild_id]:
             self.allowed_channels[guild_id].add(channel_id)
             self.save_allowed_channels()
+            logger.info(f"📺 CHANNEL ALLOWED: {channel_id} in guild {guild_id}")
             return True
+        logger.info(f"📺 CHANNEL ALREADY ALLOWED: {channel_id} in guild {guild_id}")
         return False
     
     def remove_allowed_channel(self, guild_id: int, channel_id: int) -> bool:
@@ -458,9 +467,13 @@ class ChannelManager:
             # If no channels left for this guild, remove the guild entry
             if not self.allowed_channels[guild_id]:
                 del self.allowed_channels[guild_id]
+                logger.info(f"📺 ALL CHANNEL RESTRICTIONS REMOVED: guild {guild_id}")
+            else:
+                logger.info(f"📺 CHANNEL REMOVED: {channel_id} from guild {guild_id}")
             
             self.save_allowed_channels()
             return True
+        logger.info(f"📺 CHANNEL NOT IN ALLOWED LIST: {channel_id} in guild {guild_id}")
         return False
     
     def get_allowed_channels(self, guild_id: int) -> List[int]:
@@ -472,7 +485,9 @@ class ChannelManager:
         if guild_id in self.allowed_channels:
             del self.allowed_channels[guild_id]
             self.save_allowed_channels()
+            logger.info(f"📺 CHANNEL RESTRICTIONS CLEARED: guild {guild_id} (all channels now allowed)")
             return True
+        logger.info(f"📺 NO RESTRICTIONS TO CLEAR: guild {guild_id}")
         return False
 
 class DeepDiscordBot(commands.Bot):
@@ -552,6 +567,54 @@ class DeepDiscordBot(commands.Bot):
         
         return True
     
+    async def on_command(self, ctx):
+        """Called when a command is about to be executed - log command details"""
+        try:
+            # Get user and guild context
+            user_info = f"{ctx.author.display_name} ({ctx.author.name}#{ctx.author.discriminator}, ID: {ctx.author.id})"
+            guild_info = f"{ctx.guild.name} (ID: {ctx.guild.id})" if ctx.guild else "DM"
+            channel_info = f"#{ctx.channel.name} (ID: {ctx.channel.id})" if ctx.guild else "DM"
+            
+            # Get command details
+            command_name = ctx.command.name if ctx.command else "Unknown"
+            command_args = ' '.join(str(arg) for arg in ctx.args[1:]) if len(ctx.args) > 1 else ""
+            command_kwargs = ', '.join(f"{k}={v}" for k, v in ctx.kwargs.items()) if ctx.kwargs else ""
+            full_command = f"{ctx.prefix}{command_name}"
+            if command_args:
+                full_command += f" {command_args}"
+            if command_kwargs:
+                full_command += f" ({command_kwargs})"
+            
+            # Log command execution
+            logger.info(f"🎯 COMMAND EXECUTED: '{full_command}'")
+            logger.info(f"   👤 User: {user_info}")
+            logger.info(f"   🏠 Guild: {guild_info}")
+            logger.info(f"   📺 Channel: {channel_info}")
+            logger.info(f"   📝 Raw Message: {ctx.message.content}")
+            
+            # Log admin status
+            if ctx.guild and ctx.author.guild_permissions.administrator:
+                logger.info(f"   🛡️ Admin: Yes")
+            
+            # Log authorization status for training commands
+            if command_name in ['generatetrainingdata', 'authorize']:
+                is_admin = ctx.author.guild_permissions.administrator if ctx.guild else False
+                is_authorized = self.authorization_manager.is_authorized(ctx.author.id, is_admin)
+                logger.info(f"   🔐 Authorized: {is_authorized}")
+            
+        except Exception as e:
+            # Don't let logging errors break command execution
+            logger.error(f"Error in command logging: {e}")
+    
+    async def on_command_completion(self, ctx):
+        """Called when a command completes successfully"""
+        try:
+            command_name = ctx.command.name if ctx.command else "Unknown"
+            user_info = f"{ctx.author.display_name} (ID: {ctx.author.id})"
+            logger.info(f"✅ COMMAND COMPLETED: '{ctx.prefix}{command_name}' by {user_info}")
+        except Exception as e:
+            logger.error(f"Error in command completion logging: {e}")
+    
     async def on_command_error(self, ctx, error):
         """Global error handler for commands"""
         try:
@@ -560,42 +623,57 @@ class DeepDiscordBot(commands.Bot):
                 return
             
             elif isinstance(error, commands.MissingPermissions):
+                logger.warning(f"❌ PERMISSION DENIED: {ctx.author.display_name} tried '{ctx.command}' but lacks: {', '.join(error.missing_permissions)}")
                 await self.safe_send_error(ctx, f"❌ You don't have permission to use this command. Required: {', '.join(error.missing_permissions)}")
             
             elif isinstance(error, commands.CheckFailure):
                 # This includes channel restrictions - silently ignore
-                logger.info(f"Command check failed for '{ctx.command}' in #{ctx.channel.name}")
+                logger.info(f"🚫 COMMAND BLOCKED: '{ctx.command}' by {ctx.author.display_name} in #{ctx.channel.name} (channel restrictions)")
                 return
             
             elif isinstance(error, commands.ChannelNotFound):
+                logger.warning(f"❌ CHANNEL NOT FOUND: {ctx.author.display_name} used '{ctx.command}' with invalid channel")
                 await self.safe_send_error(ctx, "❌ Channel not found. Please mention a valid channel with #channel-name or use the channel ID.")
             
             elif isinstance(error, commands.MemberNotFound):
+                logger.warning(f"❌ USER NOT FOUND: {ctx.author.display_name} used '{ctx.command}' with invalid user")
                 await self.safe_send_error(ctx, "❌ User not found. Please mention a valid user or use their user ID.")
             
             elif isinstance(error, commands.CommandInvokeError):
                 # Handle the underlying error
                 original_error = error.original
+                command_info = f"'{ctx.command}' by {ctx.author.display_name} in #{ctx.channel.name}"
                 
                 if isinstance(original_error, discord.Forbidden):
                     # Bot lacks permissions - don't try to send message, just log
-                    logger.error(f"Bot lacks permissions in #{ctx.channel.name}: {original_error}")
+                    logger.error(f"🚫 BOT PERMISSION ERROR: {command_info} - {original_error}")
+                    logger.error(f"   Error Code: {original_error.code}")
+                    logger.error(f"   Error Text: {original_error.text}")
                     try:
                         await ctx.message.add_reaction("❌")
                     except:
                         pass
                 
                 elif isinstance(original_error, discord.NotFound):
+                    logger.warning(f"❌ RESOURCE NOT FOUND: {command_info} - {original_error}")
                     await self.safe_send_error(ctx, "❌ The requested resource was not found.")
                 
                 else:
-                    # Log unexpected errors
-                    logger.error(f"Unexpected error in command '{ctx.command}': {original_error}")
+                    # Log unexpected errors with full details
+                    logger.error(f"💥 UNEXPECTED ERROR: {command_info}")
+                    logger.error(f"   Error Type: {type(original_error).__name__}")
+                    logger.error(f"   Error Message: {str(original_error)}")
+                    logger.error(f"   Command Args: {ctx.args}")
+                    logger.error(f"   Command Kwargs: {ctx.kwargs}")
+                    import traceback
+                    logger.error(f"   Traceback: {traceback.format_exc()}")
                     await self.safe_send_error(ctx, "❌ An unexpected error occurred. Please try again later.")
             
             else:
                 # Log other unexpected errors
-                logger.error(f"Unhandled command error: {error}")
+                logger.error(f"🔥 UNHANDLED COMMAND ERROR: '{ctx.command}' by {ctx.author.display_name}")
+                logger.error(f"   Error Type: {type(error).__name__}")
+                logger.error(f"   Error Details: {str(error)}")
                 await self.safe_send_error(ctx, "❌ An error occurred while processing your command.")
         
         except Exception as e:
