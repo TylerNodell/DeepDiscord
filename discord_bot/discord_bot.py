@@ -5,7 +5,7 @@ Part of DeepDiscord Project
 """
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import asyncio
 import json
 import logging
@@ -37,8 +37,14 @@ class MessageTracker:
         self.max_cache_size = 10000
         self.user_history_cache: Dict[int, Dict] = {}  # user_id -> history data
         self.pending_saves: Dict[int, Dict] = {}  # user_id -> pending save data
+        
+        # Fragment detection
+        self.fragment_buffer: Dict[int, List[discord.Message]] = {}  # user_id -> [messages]
+        self.fragment_timeout = 30  # seconds to wait for more fragments
+        self.combined_messages: Dict[int, str] = {}  # first_message_id -> combined_content
+        self.fragment_timers: Dict[int, asyncio.Task] = {}  # user_id -> timer task
     
-    def add_message(self, message: discord.Message):
+    async def add_message(self, message: discord.Message):
         """Add a message to the cache"""
         if len(self.message_cache) >= self.max_cache_size:
             # Remove oldest message (simple FIFO)
@@ -46,6 +52,9 @@ class MessageTracker:
             del self.message_cache[oldest_id]
         
         self.message_cache[message.id] = message
+        
+        # Add to fragment buffer for potential combining
+        await self.add_to_fragment_buffer(message)
         
         # Track response relationships
         if message.reference and message.reference.message_id:
@@ -102,6 +111,98 @@ class MessageTracker:
         """Clear pending save data"""
         if user_id in self.pending_saves:
             del self.pending_saves[user_id]
+    
+    def is_potential_fragment(self, message: discord.Message) -> bool:
+        """Determine if a message might be a fragment of a larger message"""
+        # Check if user has recent messages in buffer
+        if message.author.id not in self.fragment_buffer:
+            return True
+        
+        buffer = self.fragment_buffer[message.author.id]
+        if not buffer:
+            return True
+        
+        last_msg = buffer[-1]
+        time_diff = (message.created_at - last_msg.created_at).total_seconds()
+        
+        # Within fragment timeout window
+        if time_diff <= self.fragment_timeout:
+            # Check for fragment indicators
+            last_content = last_msg.content.strip()
+            curr_content = message.content.strip()
+            
+            # Incomplete sentence (no ending punctuation)
+            if last_content and not last_content[-1] in '.!?;':
+                return True
+            
+            # Continuation patterns
+            continuation_starters = ['and', 'but', 'also', 'oh', 'wait', 'actually', 'or', 'i mean', 'correction']
+            if any(curr_content.lower().startswith(pattern) for pattern in continuation_starters):
+                return True
+            
+            # Very short time gap (likely rapid typing)
+            if time_diff <= 5:
+                return True
+        
+        return False
+    
+    async def add_to_fragment_buffer(self, message: discord.Message):
+        """Add message to fragment buffer for potential combining"""
+        user_id = message.author.id
+        
+        # Cancel existing timer if any
+        if user_id in self.fragment_timers:
+            self.fragment_timers[user_id].cancel()
+        
+        if user_id not in self.fragment_buffer:
+            self.fragment_buffer[user_id] = []
+        
+        # Check if this should start a new fragment group
+        if self.fragment_buffer[user_id] and not self.is_potential_fragment(message):
+            # Process existing buffer first
+            self.process_fragment_buffer(user_id)
+            self.fragment_buffer[user_id] = []
+        
+        self.fragment_buffer[user_id].append(message)
+        
+        # Start new timer for this user
+        self.fragment_timers[user_id] = asyncio.create_task(
+            self._fragment_timeout_handler(user_id)
+        )
+    
+    async def _fragment_timeout_handler(self, user_id: int):
+        """Handle fragment timeout - process buffer after waiting"""
+        await asyncio.sleep(self.fragment_timeout)
+        self.process_fragment_buffer(user_id)
+        self.fragment_buffer[user_id] = []
+        if user_id in self.fragment_timers:
+            del self.fragment_timers[user_id]
+    
+    def process_fragment_buffer(self, user_id: int):
+        """Process and combine messages in fragment buffer"""
+        if user_id not in self.fragment_buffer or not self.fragment_buffer[user_id]:
+            return
+        
+        buffer = self.fragment_buffer[user_id]
+        
+        # If only one message, no combining needed
+        if len(buffer) == 1:
+            return
+        
+        # Combine messages
+        combined_content = " ".join(msg.content for msg in buffer)
+        first_msg_id = buffer[0].id
+        
+        # Store combined message
+        self.combined_messages[first_msg_id] = combined_content
+        
+        # Mark other messages as fragments of the first
+        for msg in buffer[1:]:
+            self.combined_messages[msg.id] = f"[Fragment of {first_msg_id}]"
+    
+    def get_combined_content(self, message_id: int) -> Optional[str]:
+        """Get combined content if message was part of fragments"""
+        return self.combined_messages.get(message_id)
 
 class DeepDiscordBot(commands.Bot):
     """Main Discord bot class for message tracking and retrieval"""
@@ -178,7 +279,7 @@ class DeepDiscordBot(commands.Bot):
                 return
         
         # Track the message
-        self.message_tracker.add_message(message)
+        await self.message_tracker.add_message(message)
         
         # Process commands
         await self.process_commands(message)
@@ -186,7 +287,7 @@ class DeepDiscordBot(commands.Bot):
     async def on_message_edit(self, before: discord.Message, after: discord.Message):
         """Handle message edits"""
         # Update the tracked message
-        self.message_tracker.add_message(after)
+        await self.message_tracker.add_message(after)
         logger.info(f"Message {after.id} edited by {after.author.name}")
     
     async def on_message_delete(self, message: discord.Message):
@@ -259,7 +360,7 @@ class MessageCommands(commands.Cog):
                 # Try to fetch from Discord API
                 try:
                     message = await ctx.channel.fetch_message(message_id)
-                    self.bot.message_tracker.add_message(message)
+                    await self.bot.message_tracker.add_message(message)
                 except discord.NotFound:
                     await ctx.send(f"❌ Message with ID `{message_id}` not found.")
                     return
@@ -538,7 +639,7 @@ class MessageCommands(commands.Cog):
                                     'jump_url': message.jump_url
                                 })
                                 # Add to bot's message tracker
-                                self.bot.message_tracker.add_message(message)
+                                await self.bot.message_tracker.add_message(message)
                         except discord.Forbidden:
                             # Skip channels we don't have access to
                             continue
@@ -1006,6 +1107,69 @@ class MessageCommands(commands.Cog):
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             await ctx.send("❌ An error occurred while skipping save.")
+    
+    @commands.command(name='fragments')
+    async def show_fragments(self, ctx: commands.Context, message_id: int):
+        """Show combined content for fragmented messages"""
+        try:
+            # Check if this message has combined content
+            combined = self.bot.message_tracker.get_combined_content(message_id)
+            
+            if not combined:
+                await ctx.send(f"❌ No fragment data found for message `{message_id}`")
+                return
+            
+            # Check if this is a fragment reference
+            if combined.startswith("[Fragment of"):
+                await ctx.send(f"ℹ️ This message is {combined}")
+                return
+            
+            # Get the original message info
+            message = self.bot.message_tracker.get_message(message_id)
+            
+            embed = discord.Embed(
+                title="Combined Message Fragments",
+                color=discord.Color.green()
+            )
+            
+            if message:
+                embed.add_field(
+                    name="Author",
+                    value=f"{message.author.mention}",
+                    inline=True
+                )
+                embed.add_field(
+                    name="Channel",
+                    value=f"{message.channel.mention}",
+                    inline=True
+                )
+                embed.add_field(
+                    name="First Fragment Time",
+                    value=message.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    inline=True
+                )
+            
+            # Show the combined content
+            embed.add_field(
+                name="Combined Content",
+                value=combined[:1024] if len(combined) > 1024 else combined,
+                inline=False
+            )
+            
+            if len(combined) > 1024:
+                embed.add_field(
+                    name="Note",
+                    value=f"Content truncated. Full length: {len(combined)} characters",
+                    inline=False
+                )
+            
+            embed.set_footer(text=f"Message ID: {message_id}")
+            
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            logger.error(f"Error in show_fragments: {e}")
+            await ctx.send("❌ An error occurred while retrieving fragment data.")
 
 class AdminCommands(commands.Cog):
     """Administrative commands"""
