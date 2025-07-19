@@ -13,6 +13,9 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 import os
 from dotenv import load_dotenv
+import zipfile
+import requests
+import tempfile
 import io
 from collections import defaultdict
 import uuid
@@ -1679,30 +1682,56 @@ class TrainingDataCommands(commands.Cog):
             user_id: Discord user ID to generate training data for
             days_back: How many days back to analyze (default: 30, max: 365)
         """
+        # Log training data generation start
+        logger.info(f"🎓 TRAINING DATA GENERATION STARTED")
+        logger.info(f"   👤 Requester: {ctx.author.display_name} (ID: {ctx.author.id})")
+        logger.info(f"   🎯 Target User ID: {user_id}")
+        logger.info(f"   📅 Days Back: {days_back}")
+        logger.info(f"   🏠 Guild: {ctx.guild.name} (ID: {ctx.guild.id})")
+        logger.info(f"   📺 Channel: #{ctx.channel.name} (ID: {ctx.channel.id})")
+        
         # Check if user is authorized
         is_admin = ctx.author.guild_permissions.administrator
         is_authorized = self.bot.authorization_manager.is_authorized(ctx.author.id, is_admin)
         
+        logger.info(f"   🔐 Authorization Check: {'✅ Authorized' if is_authorized else '❌ Not Authorized'}")
+        logger.info(f"   🛡️ Admin Status: {'✅ Admin' if is_admin else '❌ Not Admin'}")
+        
         if not is_authorized:
+            logger.warning(f"🎓 TRAINING DATA GENERATION FAILED: User {ctx.author.id} not authorized")
             await ctx.send("❌ You don't have permission to use this command. Only administrators and authorized users can generate training data. Ask an admin to run `!!authorize add @you` to get access.")
             return
         
         # Validate parameters
+        logger.info(f"📋 PARAMETER VALIDATION:")
+        logger.info(f"   📅 Days back: {days_back} (max: 365, min: 1)")
+        
         if days_back > 365:
+            logger.warning(f"❌ PARAMETER VALIDATION FAILED: days_back ({days_back}) exceeds maximum (365)")
             await ctx.send("❌ Maximum days back is 365.")
             return
         
         if days_back < 1:
+            logger.warning(f"❌ PARAMETER VALIDATION FAILED: days_back ({days_back}) below minimum (1)")
             await ctx.send("❌ Days back must be at least 1.")
             return
         
+        logger.info(f"✅ PARAMETER VALIDATION PASSED")
+        
         # Check if user exists in this guild
+        logger.info(f"👥 USER VALIDATION:")
+        logger.info(f"   🔍 Looking up user {user_id} in guild {ctx.guild.name}")
+        
         target_member = ctx.guild.get_member(user_id)
         if not target_member:
+            logger.info(f"   ⚠️ User not found in cache, trying API fetch...")
             # Try to fetch member from Discord API (in case of cache issues)
             try:
                 target_member = await ctx.guild.fetch_member(user_id)
+                logger.info(f"   ✅ User found via API fetch: {target_member.display_name}")
             except discord.NotFound:
+                logger.warning(f"   ❌ USER NOT FOUND: {user_id} is not a member of guild {ctx.guild.id}")
+                logger.info(f"🎓 TRAINING DATA GENERATION FAILED: Target user not found")
                 # User not in server, but let's provide helpful debug info
                 debug_embed = discord.Embed(
                     title="❌ User Not Found",
@@ -1722,13 +1751,39 @@ class TrainingDataCommands(commands.Cog):
                 await ctx.send(embed=debug_embed)
                 return
             except discord.Forbidden:
+                logger.error(f"   🚫 PERMISSION ERROR: Bot cannot fetch member {user_id}")
+                logger.info(f"🎓 TRAINING DATA GENERATION FAILED: Permission error fetching user")
                 await ctx.send(f"❌ Bot doesn't have permission to fetch member `{user_id}`.")
                 return
+        else:
+            logger.info(f"   ✅ User found in cache: {target_member.display_name}")
+        
+        logger.info(f"   👤 Target User: {target_member.display_name} (ID: {target_member.id})")
+        logger.info(f"   ✅ USER VALIDATION PASSED")
         
         # Check if user has given consent
-        if not self.bot.consent_manager.has_consent(user_id):
+        logger.info(f"🔒 CONSENT VALIDATION:")
+        has_consent = self.bot.consent_manager.has_consent(user_id)
+        logger.info(f"   🔍 Checking consent for user {user_id}")
+        logger.info(f"   {'✅ Consent found' if has_consent else '❌ No consent found'}")
+        
+        if not has_consent:
+            logger.info(f"🔒 REQUESTING USER CONSENT:")
+            logger.info(f"   📩 Sending consent request to {target_member.display_name}")
+            logger.info(f"🎓 TRAINING DATA GENERATION PAUSED: Awaiting user consent")
             await self.request_user_consent(ctx, target_member, days_back)
             return
+        
+        # Get consent info for logging
+        consent_info = self.bot.consent_manager.get_consent_info(user_id)
+        if consent_info:
+            logger.info(f"   📋 Consent granted at: {consent_info.get('granted_at', 'Unknown')}")
+            logger.info(f"   👤 Granted by request from: {consent_info.get('granted_by_request_from', 'Unknown')}")
+            if 'expires_at' in consent_info:
+                logger.info(f"   ⏰ Expires at: {consent_info.get('expires_at')}")
+        
+        logger.info(f"   ✅ CONSENT VALIDATION PASSED")
+        logger.info(f"🎓 PROCEEDING WITH TRAINING DATA GENERATION")
         
         # Create initial status message
         status_embed = discord.Embed(
@@ -1741,25 +1796,44 @@ class TrainingDataCommands(commands.Cog):
         status_embed.add_field(name="Status", value="🔍 Starting analysis...", inline=False)
         
         status_message = await ctx.send(embed=status_embed)
+        logger.info(f"📊 Status message sent, beginning data generation process")
         
         try:
             # Generate training data
+            logger.info(f"🏭 INITIALIZING TRAINING DATA GENERATOR:")
+            logger.info(f"   🎯 Target User: {user_id}")
+            logger.info(f"   🏠 Guild: {ctx.guild.name} (ID: {ctx.guild.id})")
+            logger.info(f"   📅 Days Back: {days_back}")
+            
             generator = DiscordTrainingDataGenerator(
                 bot=self.bot,
                 target_user_id=user_id,
                 guild=ctx.guild,
-                status_message=status_message
+                status_message=status_message,
+                days_back=days_back
             )
             
-            training_files = await generator.generate_training_data(days_back)
+            logger.info(f"🚀 STARTING TRAINING DATA GENERATION PROCESS")
+            zip_result = await generator.generate_training_data(days_back)
+            logger.info(f"🏁 TRAINING DATA GENERATION PROCESS COMPLETED")
             
-            if not training_files:
+            # Log results
+            logger.info(f"📊 TRAINING DATA GENERATION RESULTS:")
+            if not zip_result:
+                logger.warning(f"   ❌ No training data generated - no suitable response pairs found")
+                logger.info(f"🎓 TRAINING DATA GENERATION COMPLETED: No data generated")
                 await status_message.edit(embed=discord.Embed(
                     title="❌ No Training Data Generated",
                     description="No suitable response pairs were found for this user.",
                     color=discord.Color.red()
                 ))
                 return
+            
+            logger.info(f"   ✅ Generated ZIP file: {zip_result['zip_filename']} ({zip_result['size_mb']:.2f} MB)")
+            logger.info(f"   📊 Total training pairs: {zip_result['total_pairs']}")
+            logger.info(f"   📁 Files included: {len(zip_result['files_included'])}")
+            for file_info in zip_result['files_included']:
+                logger.info(f"      📄 {file_info['name']}: {file_info['count']} pairs")
             
             # Update status to show completion
             final_embed = discord.Embed(
@@ -1768,44 +1842,157 @@ class TrainingDataCommands(commands.Cog):
                 color=discord.Color.green()
             )
             
-            # Upload training files
-            files = []
-            for file_info in training_files:
-                with open(file_info['path'], 'rb') as f:
-                    discord_file = discord.File(f, filename=file_info['filename'])
-                    files.append(discord_file)
-                
-                final_embed.add_field(
-                    name=file_info['name'],
-                    value=f"{file_info['count']} training pairs",
-                    inline=True
-                )
+            # Add summary information to embed
+            final_embed.add_field(
+                name="📦 Archive Created", 
+                value=f"{zip_result['zip_filename']}\n({zip_result['size_mb']:.2f} MB)",
+                inline=False
+            )
+            final_embed.add_field(
+                name="📊 Total Training Pairs", 
+                value=str(zip_result['total_pairs']),
+                inline=True
+            )
+            final_embed.add_field(
+                name="📁 Files Included", 
+                value=str(len(zip_result['files_included'])),
+                inline=True
+            )
+            
+            # Add breakdown of files
+            breakdown_text = "\n".join([f"• {info['name']}: {info['count']} pairs" for info in zip_result['files_included']])
+            final_embed.add_field(
+                name="📋 Breakdown",
+                value=breakdown_text,
+                inline=False
+            )
             
             await status_message.edit(embed=final_embed)
             
-            # Send files
-            if len(files) <= 10:  # Discord limit
-                await ctx.send(
-                    f"📁 Training data files for {target_member.display_name}:",
-                    files=files
-                )
-            else:
-                # Send files in batches if too many
-                for i in range(0, len(files), 10):
-                    batch = files[i:i+10]
-                    await ctx.send(
-                        f"📁 Training data files (batch {i//10 + 1}):",
-                        files=batch
-                    )
+            # Handle ZIP file upload based on size
+            logger.info(f"📤 ZIP FILE UPLOAD PROCESS:")
+            logger.info(f"   📦 ZIP file size: {zip_result['size_mb']:.2f} MB")
             
-            # Clean up temporary files
-            for file_info in training_files:
-                try:
-                    os.remove(file_info['path'])
-                except:
-                    pass
+            if zip_result['size_mb'] <= 50:  # Direct Discord upload
+                logger.info(f"   📤 Uploading ZIP file directly to Discord")
+                max_retries = 3
+                retry_delay = 5
+                
+                for attempt in range(max_retries):
+                    try:
+                        with open(zip_result['zip_path'], 'rb') as f:
+                            discord_file = discord.File(f, filename=zip_result['zip_filename'])
+                            
+                        await ctx.send(
+                            f"📦 **Training Data Archive for {target_member.display_name}**",
+                            file=discord_file
+                        )
+                        logger.info(f"   ✅ ZIP file uploaded successfully to Discord")
+                        break
+                        
+                    except Exception as upload_error:
+                        logger.warning(f"   ⚠️ ZIP upload attempt {attempt + 1} failed: {upload_error}")
+                        if attempt < max_retries - 1:
+                            logger.info(f"   🔄 Retrying in {retry_delay} seconds...")
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2
+                        else:
+                            logger.error(f"   ❌ All ZIP upload attempts failed, automatically uploading online")
+                            # Automatically fall back to online hosting
+                            break  # Exit retry loop to trigger online upload below
+                
+                # If we get here and haven't uploaded to Discord successfully, upload online
+                else:
+                    # This 'else' clause executes if the loop completed without breaking (successful upload)
+                    logger.info(f"   ✅ ZIP file uploaded successfully to Discord")
+                    # Skip online upload section
+                    upload_successful = True
+                
+                # If upload failed, try online hosting
+                if 'upload_successful' not in locals():
+                    logger.info(f"   📤 Uploading to online host as fallback")
+                    download_url = await generator.upload_large_file(zip_result['zip_path'], zip_result['zip_filename'])
+                    if download_url:
+                        online_embed = discord.Embed(
+                            title="📤 Training Data - Online Download",
+                            description=f"ZIP file upload to Discord failed, but it's available online:",
+                            color=discord.Color.blue()
+                        )
+                        online_embed.add_field(
+                            name="🔗 Download Link",
+                            value=f"[{zip_result['zip_filename']}]({download_url})",
+                            inline=False
+                        )
+                        online_embed.add_field(
+                            name="⚠️ Note",
+                            value="File will be available for 14 days. Download it soon!",
+                            inline=False
+                        )
+                        await ctx.send(embed=online_embed)
+                        logger.info(f"   ✅ ZIP file uploaded to online host: {download_url}")
+                    else:
+                        await ctx.send(f"❌ Failed to upload ZIP file to Discord and online. File saved locally as `{zip_result['zip_filename']}` in results directory.")
+                        logger.error(f"   ❌ All upload methods failed, file saved locally only")
+            else:  # File too large for Discord, upload to online host
+                logger.info(f"   📤 ZIP file too large for Discord ({zip_result['size_mb']:.2f} MB > 50 MB), uploading to online host")
+                download_url = await generator.upload_large_file(zip_result['zip_path'], zip_result['zip_filename'])
+                
+                if download_url:
+                    large_file_embed = discord.Embed(
+                        title="📦 Large Training Data Archive",
+                        description=f"Training data archive for **{target_member.display_name}** is too large for Discord upload.",
+                        color=discord.Color.blue()
+                    )
+                    large_file_embed.add_field(
+                        name="📊 File Info",
+                        value=f"**Size:** {zip_result['size_mb']:.2f} MB\n**Training Pairs:** {zip_result['total_pairs']}\n**Files:** {len(zip_result['files_included'])}",
+                        inline=False
+                    )
+                    large_file_embed.add_field(
+                        name="🔗 Download Link",
+                        value=f"[{zip_result['zip_filename']}]({download_url})",
+                        inline=False
+                    )
+                    large_file_embed.add_field(
+                        name="⚠️ Important",
+                        value="File will be available for 14 days. Download it soon!",
+                        inline=False
+                    )
+                    await ctx.send(embed=large_file_embed)
+                    logger.info(f"   ✅ Large ZIP file uploaded to online host: {download_url}")
+                else:
+                    fallback_embed = discord.Embed(
+                        title="⚠️ Upload Failed - File Saved Locally",
+                        description=f"ZIP file is too large for Discord and online upload failed.",
+                        color=discord.Color.orange()
+                    )
+                    fallback_embed.add_field(
+                        name="📁 Local File",
+                        value=f"`{zip_result['zip_filename']}`\nSaved in `results/` directory",
+                        inline=False
+                    )
+                    fallback_embed.add_field(
+                        name="📊 Archive Contents",
+                        value=f"**Training Pairs:** {zip_result['total_pairs']}\n**Files:** {len(zip_result['files_included'])}",
+                        inline=False
+                    )
+                    await ctx.send(embed=fallback_embed)
+                    logger.warning(f"   ⚠️ Large ZIP file could not be uploaded online, saved locally")
+            
+            # Cleanup already handled in generate_training_files method
+            logger.info(f"🎓 TRAINING DATA GENERATION COMPLETED SUCCESSFULLY")
+            logger.info(f"   👤 User: {target_member.display_name} (ID: {target_member.id})")
+            logger.info(f"   📦 ZIP Archive: {zip_result['zip_filename']} ({zip_result['size_mb']:.2f} MB)")
+            logger.info(f"   📊 Training Pairs: {zip_result['total_pairs']}")
+            logger.info(f"   📁 Files in Archive: {len(zip_result['files_included'])}")
+            logger.info(f"   📅 Analysis Period: {days_back} days")
+            logger.info(f"   👨‍💼 Requested by: {ctx.author.display_name} (ID: {ctx.author.id})")
         
         except Exception as e:
+            logger.error(f"❌ TRAINING DATA GENERATION FAILED: {e}")
+            logger.error(f"   👤 User: {target_member.display_name if 'target_member' in locals() else user_id}")
+            logger.error(f"   📅 Days Back: {days_back}")
+            logger.error(f"   👨‍💼 Requested by: {ctx.author.display_name} (ID: {ctx.author.id})")
             logger.error(f"Error generating training data: {e}")
             error_embed = discord.Embed(
                 title="❌ Training Data Generation Failed",
@@ -1997,12 +2184,13 @@ class TrainingDataCommands(commands.Cog):
                 bot=self.bot,
                 target_user_id=target_member.id,
                 guild=ctx.guild,
-                status_message=status_message
+                status_message=status_message,
+                days_back=days_back
             )
             
-            training_files = await generator.generate_training_data(days_back)
+            zip_result = await generator.generate_training_data(days_back)
             
-            if not training_files:
+            if not zip_result:
                 await status_message.edit(embed=discord.Embed(
                     title="❌ No Training Data Generated",
                     description="No suitable response pairs were found for this user.",
@@ -2017,42 +2205,80 @@ class TrainingDataCommands(commands.Cog):
                 color=discord.Color.green()
             )
             
-            # Upload training files
-            files = []
-            for file_info in training_files:
-                with open(file_info['path'], 'rb') as f:
-                    discord_file = discord.File(f, filename=file_info['filename'])
-                    files.append(discord_file)
-                
-                final_embed.add_field(
-                    name=file_info['name'],
-                    value=f"{file_info['count']} training pairs",
-                    inline=True
-                )
+            # Add summary information
+            final_embed.add_field(
+                name="📦 Archive Created", 
+                value=f"{zip_result['zip_filename']}\n({zip_result['size_mb']:.2f} MB)",
+                inline=False
+            )
+            final_embed.add_field(
+                name="📊 Total Training Pairs", 
+                value=str(zip_result['total_pairs']),
+                inline=True
+            )
+            final_embed.add_field(
+                name="📁 Files Included", 
+                value=str(len(zip_result['files_included'])),
+                inline=True
+            )
             
             await status_message.edit(embed=final_embed)
             
-            # Send files
-            if len(files) <= 10:  # Discord limit
-                await ctx.send(
-                    f"📁 Training data files for {target_member.display_name}:",
-                    files=files
-                )
-            else:
-                # Send files in batches if too many
-                for i in range(0, len(files), 10):
-                    batch = files[i:i+10]
-                    await ctx.send(
-                        f"📁 Training data files (batch {i//10 + 1}):",
-                        files=batch
-                    )
-            
-            # Clean up temporary files
-            for file_info in training_files:
+            # Send ZIP file  
+            if zip_result['size_mb'] <= 50:  # Try Discord upload first
+                discord_upload_successful = False
                 try:
-                    os.remove(file_info['path'])
-                except:
-                    pass
+                    with open(zip_result['zip_path'], 'rb') as f:
+                        discord_file = discord.File(f, filename=zip_result['zip_filename'])
+                        
+                    await ctx.send(
+                        f"📦 **Training Data Archive for {target_member.display_name}**",
+                        file=discord_file
+                    )
+                    discord_upload_successful = True
+                except Exception as upload_error:
+                    logger.warning(f"Discord upload failed: {upload_error}, trying online hosting")
+                
+                # If Discord upload failed, automatically try online hosting
+                if not discord_upload_successful:
+                    download_url = await generator.upload_large_file(zip_result['zip_path'], zip_result['zip_filename'])
+                    if download_url:
+                        online_embed = discord.Embed(
+                            title="📤 Training Data - Online Download",
+                            description=f"ZIP file upload to Discord failed, but it's available online:",
+                            color=discord.Color.blue()
+                        )
+                        online_embed.add_field(
+                            name="🔗 Download Link",
+                            value=f"[{zip_result['zip_filename']}]({download_url})",
+                            inline=False
+                        )
+                        online_embed.add_field(
+                            name="⚠️ Note",
+                            value="File will be available for 14 days. Download it soon!",
+                            inline=False
+                        )
+                        await ctx.send(embed=online_embed)
+                    else:
+                        await ctx.send(f"❌ Failed to upload ZIP file to Discord and online. File saved locally as `{zip_result['zip_filename']}`.")
+            else:  # File too large, upload to online host
+                download_url = await generator.upload_large_file(zip_result['zip_path'], zip_result['zip_filename'])
+                if download_url:
+                    large_file_embed = discord.Embed(
+                        title="📦 Large Training Data Archive",
+                        description=f"Training data archive is too large for Discord upload ({zip_result['size_mb']:.2f} MB).",
+                        color=discord.Color.blue()
+                    )
+                    large_file_embed.add_field(
+                        name="🔗 Download Link",
+                        value=f"[{zip_result['zip_filename']}]({download_url})",
+                        inline=False
+                    )
+                    await ctx.send(embed=large_file_embed)
+                else:
+                    await ctx.send(f"❌ Failed to upload large ZIP file. File saved locally as `{zip_result['zip_filename']}`.")
+            
+            # Cleanup already handled in generate_training_files method
         
         except Exception as e:
             logger.error(f"Error in automatic training generation: {e}")
@@ -2373,52 +2599,95 @@ class TrainingDataCommands(commands.Cog):
 class DiscordTrainingDataGenerator:
     """Training data generator integrated with Discord bot"""
     
-    def __init__(self, bot: DeepDiscordBot, target_user_id: int, guild: discord.Guild, status_message: discord.Message):
+    def __init__(self, bot: DeepDiscordBot, target_user_id: int, guild: discord.Guild, status_message: discord.Message, days_back: int = 30):
         self.bot = bot
         self.target_user_id = target_user_id
         self.guild = guild
         self.status_message = status_message
+        self.days_back = days_back
         self.response_pairs = []
         self.channels_processed = 0
         self.messages_analyzed = 0
+        self.update_task = None
+        self.is_processing = False
+        self.current_status = "🔍 Starting..."
+        
+    async def periodic_update_task(self):
+        """Background task that updates the embed every 15 seconds"""
+        while self.is_processing:
+            try:
+                await asyncio.sleep(15)
+                if self.is_processing:  # Check again in case processing finished during sleep
+                    await self.update_status(self.current_status)
+                    logger.info(f"🔄 PERIODIC UPDATE: Status: {self.current_status} | Messages: {self.messages_analyzed}, Pairs: {len(self.response_pairs)}, Channels: {self.channels_processed}")
+            except Exception as e:
+                logger.warning(f"Error in periodic update: {e}")
+                break
         
     async def generate_training_data(self, days_back: int = 30, min_response_length: int = 10):
         """Generate training data with Discord timeout management"""
         cutoff_date = datetime.utcnow() - timedelta(days=days_back)
         
-        await self.update_status("🔍 Scanning channels...")
+        # Start processing flag and periodic update task
+        self.is_processing = True
+        self.update_task = asyncio.create_task(self.periodic_update_task())
         
-        # Get all accessible text channels
-        accessible_channels = []
-        for channel in self.guild.text_channels:
-            try:
-                # Test if we can read the channel
-                await channel.fetch_message(channel.last_message_id) if channel.last_message_id else None
-                accessible_channels.append(channel)
-            except (discord.Forbidden, discord.NotFound):
-                continue
-        
-        await self.update_status(f"📋 Found {len(accessible_channels)} accessible channels")
-        
-        # Process each channel with delays to avoid timeouts
-        for i, channel in enumerate(accessible_channels):
-            try:
-                await self.update_status(f"📝 Processing #{channel.name} ({i+1}/{len(accessible_channels)})")
-                await self.process_channel_messages(channel, cutoff_date, min_response_length)
-                self.channels_processed += 1
-                
-                # Add delay between channels to avoid rate limits
-                if i < len(accessible_channels) - 1:  # Don't delay after last channel
-                    await asyncio.sleep(2)  # 2 second delay between channels
+        try:
+            self.current_status = "🔍 Scanning channels..."
+            await self.update_status(self.current_status)
+            
+            # Get all accessible text channels
+            accessible_channels = []
+            for channel in self.guild.text_channels:
+                try:
+                    # Test if we can read the channel
+                    await channel.fetch_message(channel.last_message_id) if channel.last_message_id else None
+                    accessible_channels.append(channel)
+                except (discord.Forbidden, discord.NotFound):
+                    continue
+            
+            self.current_status = f"📋 Found {len(accessible_channels)} accessible channels"
+            await self.update_status(self.current_status)
+            
+            # Process each channel with delays to avoid timeouts
+            for i, channel in enumerate(accessible_channels):
+                try:
+                    self.current_status = f"📝 Processing #{channel.name} ({i+1}/{len(accessible_channels)})"
+                    await self.update_status(self.current_status)
+                    logger.info(f"📂 PROCESSING CHANNEL {i+1}/{len(accessible_channels)}: #{channel.name} (ID: {channel.id})")
+                    await self.process_channel_messages(channel, cutoff_date, min_response_length)
+                    self.channels_processed += 1
+                    logger.info(f"✅ COMPLETED CHANNEL: #{channel.name} - Total messages analyzed: {self.messages_analyzed}, Training pairs found: {len(self.response_pairs)}")
                     
-            except Exception as e:
-                logger.error(f"Error processing channel {channel.name}: {e}")
-                continue
-        
-        await self.update_status("💾 Generating training files...")
-        
-        # Generate training files
-        return self.generate_training_files()
+                    # Add delay between channels to avoid rate limits
+                    if i < len(accessible_channels) - 1:  # Don't delay after last channel
+                        await asyncio.sleep(2)  # 2 second delay between channels
+                        
+                except Exception as e:
+                    logger.error(f"Error processing channel {channel.name}: {e}")
+                    continue
+            
+            self.current_status = "💾 Generating training files..."
+            await self.update_status(self.current_status)
+            
+            # Generate training files
+            # Get target user info for filename
+            target_user = self.guild.get_member(self.target_user_id)
+            target_username = target_user.display_name if target_user else f"user_{self.target_user_id}"
+            
+            zip_result = self.generate_training_files(target_username)
+            
+            return zip_result
+            
+        finally:
+            # Stop the periodic update task
+            self.is_processing = False
+            if self.update_task and not self.update_task.done():
+                self.update_task.cancel()
+                try:
+                    await self.update_task
+                except asyncio.CancelledError:
+                    pass
     
     async def process_channel_messages(self, channel: discord.TextChannel, cutoff_date: datetime, min_response_length: int):
         """Process messages in a channel with chunked retrieval to avoid timeouts"""
@@ -2437,6 +2706,11 @@ class DiscordTrainingDataGenerator:
                     if not message.author.bot:
                         chunk_messages.append(message)
                         self.messages_analyzed += 1
+                        
+                        # Log the message being processed
+                        content_preview = message.content[:100] + "..." if len(message.content) > 100 else message.content
+                        content_preview = content_preview.replace('\n', ' ')  # Replace newlines for cleaner logs
+                        logger.info(f"   📨 Message {self.messages_analyzed}: {message.author.display_name} in #{channel.name}: \"{content_preview}\"")
                         
                         # Add to bot tracker for fragment analysis
                         await self.bot.message_tracker.add_message(message)
@@ -2466,13 +2740,29 @@ class DiscordTrainingDataGenerator:
             if message.author.id == self.target_user_id:
                 target_responses += 1
                 
+                # Log target user message
+                content_preview = message.content[:80] + "..." if len(message.content) > 80 else message.content
+                content_preview = content_preview.replace('\n', ' ')
+                logger.info(f"   🎯 Target user message {target_responses}: \"{content_preview}\"")
+                
                 # Look for what they're responding to
                 response_to = await self.find_response_target(message, messages[:i])
                 
                 if response_to and len(message.content.strip()) >= min_response_length:
                     training_pair = self.create_training_pair(response_to, message)
                     if training_pair:
+                        # Log successful training pair creation
+                        question_preview = training_pair['question'][:60] + "..." if len(training_pair['question']) > 60 else training_pair['question']
+                        answer_preview = training_pair['answer'][:60] + "..." if len(training_pair['answer']) > 60 else training_pair['answer']
+                        logger.info(f"   ✅ Training pair #{len(self.response_pairs) + 1}: Q: \"{question_preview}\" A: \"{answer_preview}\" (confidence: {response_to['confidence']:.2f})")
+                        
                         self.response_pairs.append(training_pair)
+                else:
+                    # Log why no training pair was created
+                    if not response_to:
+                        logger.info(f"   ❌ No response target found for message")
+                    elif len(message.content.strip()) < min_response_length:
+                        logger.info(f"   ❌ Message too short ({len(message.content.strip())} < {min_response_length} chars)")
     
     async def find_response_target(self, target_message: discord.Message, previous_messages: List[discord.Message]):
         """Find what message the target user is responding to"""
@@ -2544,18 +2834,40 @@ class DiscordTrainingDataGenerator:
         
         return False
     
+    def clean_unicode_content(self, text: str) -> str:
+        """Clean problematic Unicode characters from text"""
+        if not text:
+            return text
+        
+        # Replace problematic Unicode escape sequences
+        cleaned = text
+        
+        # Replace guitar emoji escape sequence with actual emoji
+        cleaned = cleaned.replace('\\ud83c\\udfb8', '🎸')
+        
+        # Replace right single quotation mark escape sequence with regular apostrophe  
+        cleaned = cleaned.replace('\\u2019', "'")
+        
+        # Replace other common problematic sequences
+        cleaned = cleaned.replace('\\u201c', '"')  # left double quotation mark
+        cleaned = cleaned.replace('\\u201d', '"')  # right double quotation mark
+        cleaned = cleaned.replace('\\u2018', "'")  # left single quotation mark
+        cleaned = cleaned.replace('\\u2026', '...')  # horizontal ellipsis
+        
+        return cleaned
+    
     def create_training_pair(self, response_info: dict, target_response: discord.Message):
         """Create a formatted training pair"""
         question_msg = response_info['message']
         
-        # Format the question (include author context)
-        question = f"{question_msg.author.display_name}: {question_msg.content}"
+        # Format the question (include author context) and clean Unicode
+        question = f"{question_msg.author.display_name}: {self.clean_unicode_content(question_msg.content)}"
         
-        # Format the answer (get combined content if fragment)
-        answer = target_response.content
+        # Format the answer (get combined content if fragment) and clean Unicode
+        answer = self.clean_unicode_content(target_response.content)
         combined_content = self.bot.message_tracker.get_combined_content(target_response.id)
         if combined_content and not combined_content.startswith("[Fragment of"):
-            answer = combined_content
+            answer = self.clean_unicode_content(combined_content)
         
         return {
             "question": question.strip(),
@@ -2573,10 +2885,10 @@ class DiscordTrainingDataGenerator:
             }
         }
     
-    def generate_training_files(self):
-        """Generate training data files"""
+    def generate_training_files(self, target_username: str = None):
+        """Generate training data files and create a zip archive"""
         if not self.response_pairs:
-            return []
+            return None
         
         # Filter by confidence levels
         high_confidence = [pair for pair in self.response_pairs if pair['metadata']['confidence'] >= 0.8]
@@ -2590,12 +2902,25 @@ class DiscordTrainingDataGenerator:
         }
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        training_files = []
         
-        # Create temporary directory
+        # Get username for filename
+        username = target_username or f"user_{self.target_user_id}"
+        # Clean username for filename (remove invalid characters)
+        safe_username = "".join(c for c in username if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        safe_username = safe_username.replace(' ', '_')
+        
+        # Create results directory
+        results_dir = "results"
+        os.makedirs(results_dir, exist_ok=True)
+        
+        # Create temporary directory for individual files
         temp_dir = f"/tmp/training_data_{timestamp}"
         os.makedirs(temp_dir, exist_ok=True)
         
+        logger.info(f"📦 Creating training data files for {safe_username}")
+        
+        # Generate individual JSON files
+        json_files = []
         for name, data in datasets.items():
             if not data:  # Skip empty datasets
                 continue
@@ -2607,37 +2932,151 @@ class DiscordTrainingDataGenerator:
                 "metadata": {
                     "generated_at": datetime.now().isoformat(),
                     "target_user_id": self.target_user_id,
+                    "target_username": target_username,
                     "total_pairs": len(data),
                     "confidence_threshold": name,
                     "format": "question/answer pairs for training",
                     "channels_processed": self.channels_processed,
-                    "messages_analyzed": self.messages_analyzed
+                    "messages_analyzed": self.messages_analyzed,
+                    "guild_name": self.guild.name if self.guild else "Unknown"
                 },
                 "training_data": data
             }
             
-            with open(filepath, 'w') as f:
-                json.dump(training_data, f, indent=2)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(training_data, f, indent=2, ensure_ascii=False)
             
-            training_files.append({
+            json_files.append({
                 'name': f"{name.replace('_', ' ').title()}",
                 'filename': filename,
                 'path': filepath,
                 'count': len(data)
             })
+            
+            logger.info(f"   📄 Generated {filename}: {len(data)} pairs")
         
-        return training_files
+        # Create ZIP file
+        zip_filename = f"training_data_{safe_username}_{timestamp}.zip"
+        zip_path = os.path.join(results_dir, zip_filename)
+        
+        logger.info(f"📦 Creating ZIP archive: {zip_filename}")
+        
+        # Create summary file
+        summary_data = {
+            "generation_summary": {
+                "generated_at": datetime.now().isoformat(),
+                "target_user_id": self.target_user_id,
+                "target_username": target_username,
+                "guild_name": self.guild.name if self.guild else "Unknown",
+                "total_files": len(json_files),
+                "total_training_pairs": len(self.response_pairs),
+                "channels_processed": self.channels_processed,
+                "messages_analyzed": self.messages_analyzed,
+                "confidence_breakdown": {
+                    "high_confidence": len(high_confidence),
+                    "medium_confidence": len(medium_confidence),
+                    "all_responses": len(all_pairs)
+                }
+            },
+            "files_included": [
+                {
+                    "filename": file_info['filename'],
+                    "description": file_info['name'],
+                    "training_pairs": file_info['count']
+                }
+                for file_info in json_files
+            ]
+        }
+        
+        summary_path = os.path.join(temp_dir, f"README_{timestamp}.json")
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            json.dump(summary_data, f, indent=2, ensure_ascii=False)
+        
+        # Create ZIP file
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Add summary file
+            zipf.write(summary_path, f"README_{timestamp}.json")
+            
+            # Add all JSON files
+            for file_info in json_files:
+                zipf.write(file_info['path'], file_info['filename'])
+        
+        # Get ZIP file size
+        zip_size = os.path.getsize(zip_path)
+        zip_size_mb = zip_size / (1024 * 1024)
+        
+        logger.info(f"📦 ZIP created: {zip_filename} ({zip_size_mb:.2f} MB)")
+        
+        # Clean up temporary files
+        for file_info in json_files:
+            try:
+                os.remove(file_info['path'])
+            except:
+                pass
+        try:
+            os.remove(summary_path)
+            os.rmdir(temp_dir)
+        except:
+            pass
+        
+        return {
+            'zip_path': zip_path,
+            'zip_filename': zip_filename,
+            'size_mb': zip_size_mb,
+            'files_included': json_files,
+            'total_pairs': len(self.response_pairs)
+        }
+    
+    async def upload_large_file(self, file_path: str, filename: str) -> str:
+        """Upload large file to online host and return download link"""
+        logger.info(f"📤 Uploading large file to online host: {filename}")
+        
+        try:
+            # Using file.io (free temporary file hosting)
+            with open(file_path, 'rb') as f:
+                files = {'file': (filename, f)}
+                response = requests.post('https://file.io', files=files, timeout=300)
+                
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('success'):
+                    download_url = result.get('link')
+                    logger.info(f"✅ File uploaded successfully: {download_url}")
+                    return download_url
+                else:
+                    logger.error(f"❌ Upload failed: {result.get('message', 'Unknown error')}")
+                    return None
+            else:
+                logger.error(f"❌ Upload failed with status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            logger.error("❌ Upload timed out after 5 minutes")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Upload error: {e}")
+            return None
     
     async def update_status(self, status_text: str):
         """Update the status message"""
         try:
             embed = self.status_message.embeds[0]
-            embed.set_field_at(2, name="Status", value=status_text, inline=False)
+            
+            # Clear all fields and rebuild to prevent duplication
+            embed.clear_fields()
+            
+            # Re-add the core fields
+            embed.add_field(name="Target User", value=f"<@{self.target_user_id}>", inline=True)
+            embed.add_field(name="Analysis Period", value=f"{self.days_back} days", inline=True)
+            embed.add_field(name="Status", value=status_text, inline=False)
             embed.add_field(name="Messages Analyzed", value=str(self.messages_analyzed), inline=True)
             embed.add_field(name="Training Pairs Found", value=str(len(self.response_pairs)), inline=True)
+            
             await self.status_message.edit(embed=embed)
-        except:
-            pass  # Ignore update errors
+        except Exception as e:
+            # Log the error but don't break the process
+            logger.warning(f"Error updating status embed: {e}")
+            pass
 
 class HelpCommands(commands.Cog):
     """Help and information commands"""
