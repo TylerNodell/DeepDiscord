@@ -11,7 +11,7 @@ class DataConfig:
     """Configuration for data processing and loading."""
     
     # Data paths
-    input_dir: str = "../results"
+    input_dir: str = "../discord_bot/results"  # Points to discord_bot/results where training data is stored
     processed_dir: str = "./data/processed"
     cache_dir: str = "./data/cache"
     
