@@ -2596,10 +2596,10 @@ class DiscordTrainingDataGenerator:
         self.current_status = "🔍 Starting..."
         
     async def periodic_update_task(self):
-        """Background task that updates the embed every 15 seconds"""
+        """Background task that updates the embed every 5 seconds"""
         while self.is_processing:
             try:
-                await asyncio.sleep(15)
+                await asyncio.sleep(5)
                 if self.is_processing:  # Check again in case processing finished during sleep
                     await self.update_status(self.current_status)
                     logger.info(f"🔄 PERIODIC UPDATE: Status: {self.current_status} | Messages: {self.messages_analyzed}, Pairs: {len(self.response_pairs)}, Channels: {self.channels_processed}")
