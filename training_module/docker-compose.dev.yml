@@ -1,0 +1,202 @@
+# Development Docker Compose configuration
+# Includes development tools, debugging, and hot-reload capabilities
+
+version: '3.8'
+
+services:
+  training-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    image: deepdiscord-training:development
+    container_name: deepdiscord-training-dev
+    restart: unless-stopped
+    
+    ports:
+      - "8888:8888"   # Jupyter Lab
+      - "6006:6006"   # TensorBoard
+      - "8097:8097"   # Visdom (optional)
+      - "8265:8265"   # Ray Dashboard (if using Ray)
+    
+    volumes:
+      # Source code mounting for hot-reload
+      - .:/app/training_module
+      - ../discord_bot/results:/app/discord_bot/results:ro
+      - ../discord_bot/discord_data:/app/discord_bot/discord_data:ro
+      
+      # Development caches (faster rebuilds)
+      - dev_cache:/app/training_module/data/cache
+      - dev_checkpoints:/app/training_module/checkpoints
+      - dev_logs:/app/training_module/logs
+      - dev_experiments:/app/training_module/experiments
+      
+      # Persistent development tools
+      - jupyter_config:/root/.jupyter
+      - pip_cache:/root/.cache/pip
+      - huggingface_cache:/app/training_module/.cache/huggingface
+    
+    environment:
+      # Development-specific GPU settings
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      
+      # Relaxed memory settings for development
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+      - CUDA_LAUNCH_BLOCKING=1  # Better error messages
+      
+      # Development threading
+      - OMP_NUM_THREADS=4
+      - MKL_NUM_THREADS=4
+      - OPENBLAS_NUM_THREADS=4
+      
+      # Jupyter configuration
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=deepdiscord-training
+      - JUPYTER_PORT=8888
+      
+      # Python development settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=0  # Allow bytecode for faster reloads
+      - PYTHONPATH=/app/training_module
+      
+      # Development tools
+      - WANDB_MODE=offline
+      - TOKENIZERS_PARALLELISM=false
+      
+      # Debugging
+      - PYTORCH_DEBUG=1
+      - NCCL_DEBUG=INFO
+      
+      # Cache directories
+      - HF_HOME=/app/training_module/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/training_module/.cache/transformers
+      - HF_DATASETS_CACHE=/app/training_module/.cache/datasets
+      - PIP_CACHE_DIR=/root/.cache/pip
+    
+    deploy:
+      resources:
+        limits:
+          memory: 32G  # More generous for development
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    
+    # Development health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    
+    # Development command with multiple services
+    command: >
+      bash -c '
+        echo "Starting development environment..."
+        
+        # Start Jupyter Lab in background
+        jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/app/training_module --NotebookApp.token=deepdiscord-training &
+        
+        # Start TensorBoard in background
+        tensorboard --logdir=/app/training_module/logs --host=0.0.0.0 --port=6006 &
+        
+        # Keep container running
+        echo "Development services started:"
+        echo "- Jupyter Lab: http://localhost:8888 (token: deepdiscord-training)"
+        echo "- TensorBoard: http://localhost:6006"
+        echo "- Container shell available via: docker exec -it deepdiscord-training-dev bash"
+        
+        wait
+      '
+    
+    stdin_open: true
+    tty: true
+
+  # Code quality tools
+  linter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: deepdiscord-linter
+    volumes:
+      - .:/app/training_module
+    working_dir: /app/training_module
+    command: >
+      bash -c '
+        echo "Running code quality checks..."
+        python -m black --check . || echo "Black formatting issues found"
+        python -m flake8 . || echo "Flake8 issues found"
+        python -m pytest tests/ -v || echo "Tests failed"
+      '
+    profiles:
+      - tools
+
+  # Data preprocessing service
+  preprocessor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: deepdiscord-preprocessor
+    volumes:
+      - .:/app/training_module
+      - ../discord_bot/results:/app/discord_bot/results:ro
+      - ../discord_bot/discord_data:/app/discord_bot/discord_data:ro
+      - dev_cache:/app/training_module/data/cache
+    working_dir: /app/training_module
+    environment:
+      - PYTHONPATH=/app/training_module
+    profiles:
+      - tools
+
+  # Interactive debugging container
+  debugger:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: deepdiscord-debugger
+    volumes:
+      - .:/app/training_module
+      - ../discord_bot/results:/app/discord_bot/results:ro
+      - dev_cache:/app/training_module/data/cache
+    environment:
+      - PYTHONPATH=/app/training_module
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    command: bash
+    stdin_open: true
+    tty: true
+    profiles:
+      - debug
+
+volumes:
+  dev_cache:
+    driver: local
+  dev_checkpoints:
+    driver: local
+  dev_logs:
+    driver: local
+  dev_experiments:
+    driver: local
+  jupyter_config:
+    driver: local
+  pip_cache:
+    driver: local
+  huggingface_cache:
+    driver: local
+
+networks:
+  default:
+    driver: bridge

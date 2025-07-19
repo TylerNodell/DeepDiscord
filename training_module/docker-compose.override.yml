@@ -1,0 +1,67 @@
+# Docker Compose Override for GPU-specific configurations
+# This file contains GPU-specific settings that can be customized per environment
+
+version: '3.8'
+
+services:
+  training-dev:
+    environment:
+      # GPU Configuration
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      
+      # Memory Management
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+      - CUDA_LAUNCH_BLOCKING=0
+      
+      # Performance Optimization
+      - OMP_NUM_THREADS=4
+      - MKL_NUM_THREADS=4
+      - OPENBLAS_NUM_THREADS=4
+      
+      # Hugging Face Configuration
+      - HF_HOME=/app/training_module/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/training_module/.cache/transformers
+      - HF_DATASETS_CACHE=/app/training_module/.cache/datasets
+      
+    deploy:
+      resources:
+        limits:
+          memory: 32G
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']  # Specify GPU ID
+              capabilities: [gpu]
+
+  training-prod:
+    environment:
+      # Production GPU Configuration
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      
+      # Optimized for training
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512,roundup_power2_divisions:16
+      - CUDA_LAUNCH_BLOCKING=0
+      - NCCL_DEBUG=INFO
+      
+      # Memory and Threading
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      
+      # Caching
+      - HF_HOME=/app/training_module/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/training_module/.cache/transformers
+      
+    deploy:
+      resources:
+        limits:
+          memory: 28G  # Leave some memory for system
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]

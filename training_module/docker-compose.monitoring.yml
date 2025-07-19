@@ -1,0 +1,207 @@
+# Advanced monitoring stack for remote training monitoring
+# Includes Grafana, Prometheus, and GPU monitoring
+
+version: '3.8'
+
+services:
+  # GPU and system metrics collector
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: deepdiscord-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # NVIDIA GPU metrics exporter
+  nvidia-exporter:
+    image: mindprince/nvidia_gpu_prometheus_exporter:latest
+    container_name: deepdiscord-nvidia-exporter
+    ports:
+      - "9445:9445"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Prometheus metrics collector
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: deepdiscord-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: deepdiscord-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=deepdiscord
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Training logs aggregator
+  loki:
+    image: grafana/loki:latest
+    container_name: deepdiscord-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Log shipper for training logs
+  promtail:
+    image: grafana/promtail:latest
+    container_name: deepdiscord-promtail
+    volumes:
+      - ./monitoring/promtail.yml:/etc/promtail/config.yml
+      - ./logs:/var/log/training:ro
+      - /var/log:/var/log/host:ro
+    command: -config.file=/etc/promtail/config.yml
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Real-time GPU monitoring dashboard
+  gpustat-web:
+    image: python:3.10-slim
+    container_name: deepdiscord-gpustat
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: >
+      bash -c '
+        pip install gpustat flask &&
+        python -c "
+import subprocess
+import json
+import time
+from flask import Flask, jsonify, render_template_string
+
+app = Flask(__name__)
+
+GPU_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DeepDiscord GPU Monitor</title>
+    <meta http-equiv=\"refresh\" content=\"5\">
+    <style>
+        body { font-family: monospace; background: #1e1e1e; color: #fff; margin: 20px; }
+        .gpu { border: 1px solid #333; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .metric { display: inline-block; margin: 5px 15px 5px 0; }
+        .temp { color: #ff6b6b; }
+        .mem { color: #4ecdc4; }
+        .util { color: #45b7d1; }
+        .power { color: #96ceb4; }
+        h1 { color: #feca57; }
+        .timestamp { color: #a4b0be; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <h1>🔥 DeepDiscord GPU Monitor</h1>
+    <div class=\"timestamp\">Last updated: {{ timestamp }}</div>
+    {% for gpu in gpus %}
+    <div class=\"gpu\">
+        <h3>{{ gpu.name }} (GPU {{ gpu.index }})</h3>
+        <div class=\"metric temp\">🌡️ {{ gpu.temperature }}°C</div>
+        <div class=\"metric mem\">💾 {{ gpu.memory_used }}/{{ gpu.memory_total }} MB</div>
+        <div class=\"metric util\">⚡ {{ gpu.utilization }}%</div>
+        <div class=\"metric power\">🔋 {{ gpu.power_draw }}/{{ gpu.power_limit }} W</div>
+    </div>
+    {% endfor %}
+</body>
+</html>
+'''
+
+@app.route(\"/\")
+def gpu_status():
+    try:
+        result = subprocess.run([\"nvidia-smi\", \"--query-gpu=index,name,temperature.gpu,memory.used,memory.total,utilization.gpu,power.draw,power.limit\", \"--format=csv,noheader,nounits\"], 
+                               capture_output=True, text=True)
+        gpus = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split(\", \")
+                gpus.append({
+                    \"index\": parts[0],
+                    \"name\": parts[1],
+                    \"temperature\": parts[2],
+                    \"memory_used\": parts[3],
+                    \"memory_total\": parts[4],
+                    \"utilization\": parts[5],
+                    \"power_draw\": parts[6],
+                    \"power_limit\": parts[7]
+                })
+        return render_template_string(GPU_TEMPLATE, gpus=gpus, timestamp=time.strftime('%Y-%m-%d %H:%M:%S'))
+    except Exception as e:
+        return f\"Error: {e}\"
+
+if __name__ == \"__main__\":
+    app.run(host=\"0.0.0.0\", port=8080)
+        "
+      '
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge

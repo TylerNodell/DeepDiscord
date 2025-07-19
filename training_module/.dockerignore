@@ -1,0 +1,124 @@
+# Docker ignore file for training module
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Training outputs (will be mounted as volumes)
+checkpoints/
+logs/
+wandb/
+mlruns/
+experiments/
+
+# Data directories (will be mounted as volumes)
+data/processed/
+data/cache/
+
+# Large model files
+*.bin
+*.safetensors
+*.pth
+*.pt
+*.ckpt
+*.h5
+*.hdf5
+*.onnx
+*.tflite
+*.pb
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+docs/_build/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Local configuration files
+.env.local
+.env.*.local
+
+# Weights & Biases
+wandb/
+
+# TensorBoard logs
+runs/
+
+# Hugging Face cache
+.cache/huggingface/
+
+# CUDA cache
+.nv/
+
+# Large datasets
+*.zip
+*.tar.gz
+*.tar.bz2
+
+# Docker files in subdirectories
+**/Dockerfile
+**/docker-compose.yml
+
+# README and documentation (keep in image)
+!README.md
+!*.md

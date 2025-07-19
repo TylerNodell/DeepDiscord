@@ -1,0 +1,149 @@
+# Docker Compose for DeepDiscord Training Module
+# Supports development and production environments with GPU acceleration
+
+version: '3.8'
+
+services:
+  # Development environment with Jupyter and TensorBoard
+  training-dev:
+    build:
+      context: ./training_module
+      dockerfile: Dockerfile
+      target: development
+    container_name: deepdiscord-training-dev
+    ports:
+      - "8888:8888"  # Jupyter Lab
+      - "6006:6006"  # TensorBoard
+      - "8097:8097"  # Visdom (optional)
+    volumes:
+      - ./training_module:/app/training_module
+      - ./discord_bot/results:/app/discord_bot/results:ro  # Read-only training data
+      - ./discord_bot/discord_data:/app/discord_bot/discord_data:ro  # Read-only consent data
+      - training_cache:/app/training_module/data/cache
+      - training_checkpoints:/app/training_module/checkpoints
+      - training_logs:/app/training_module/logs
+      - training_experiments:/app/training_module/experiments
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=deepdiscord-training
+      - WANDB_MODE=offline
+      - TOKENIZERS_PARALLELISM=false
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # Production training environment
+  training-prod:
+    build:
+      context: ./training_module
+      dockerfile: Dockerfile
+      target: training
+    container_name: deepdiscord-training-prod
+    volumes:
+      - ./discord_bot/results:/app/discord_bot/results:ro
+      - ./discord_bot/discord_data:/app/discord_bot/discord_data:ro
+      - training_checkpoints:/app/training_module/checkpoints
+      - training_logs:/app/training_module/logs
+      - training_experiments:/app/training_module/experiments
+      - ./training_module/config:/app/training_module/config:ro
+    environment:
+      - WANDB_MODE=offline
+      - TOKENIZERS_PARALLELISM=false
+      - CUDA_VISIBLE_DEVICES=0
+      - OMP_NUM_THREADS=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 16G
+    restart: "no"
+    profiles:
+      - production
+
+  # Discord Bot (existing service)
+  discord-bot:
+    build:
+      context: ./discord_bot
+      dockerfile: Dockerfile
+    container_name: deepdiscord-bot
+    volumes:
+      - ./discord_bot:/app
+      - bot_data:/app/discord_data
+      - ./discord_bot/results:/app/results
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      - training-dev
+    profiles:
+      - with-bot
+
+  # Monitoring services
+  tensorboard:
+    image: tensorflow/tensorflow:latest-gpu
+    container_name: deepdiscord-tensorboard
+    ports:
+      - "6007:6006"
+    volumes:
+      - training_logs:/logs
+    command: tensorboard --logdir=/logs --host=0.0.0.0 --port=6006
+    profiles:
+      - monitoring
+
+  # Weights & Biases local server (optional)
+  wandb-local:
+    image: wandb/local:latest
+    container_name: deepdiscord-wandb
+    ports:
+      - "8080:8080"
+    volumes:
+      - wandb_data:/vol
+    environment:
+      - LICENSE=wandb-local
+    profiles:
+      - monitoring
+
+  # GPU monitoring
+  gpu-monitor:
+    image: nvidia/cuda:12.1-base-ubuntu22.04
+    container_name: deepdiscord-gpu-monitor
+    command: bash -c "while true; do nvidia-smi; sleep 30; done"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles:
+      - monitoring
+
+volumes:
+  training_cache:
+    driver: local
+  training_checkpoints:
+    driver: local
+  training_logs:
+    driver: local
+  training_experiments:
+    driver: local
+  bot_data:
+    driver: local
+  wandb_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge

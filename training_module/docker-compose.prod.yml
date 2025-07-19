@@ -1,0 +1,168 @@
+# Production Docker Compose configuration
+# Optimized for training workloads with minimal overhead
+
+version: '3.8'
+
+services:
+  training:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    image: deepdiscord-training:production
+    container_name: deepdiscord-training-prod
+    restart: "no"
+    
+    volumes:
+      # Read-only data mounts
+      - ../discord_bot/results:/app/discord_bot/results:ro
+      - ../discord_bot/discord_data:/app/discord_bot/discord_data:ro
+      
+      # Persistent storage for outputs
+      - training_checkpoints:/app/training_module/checkpoints
+      - training_logs:/app/training_module/logs
+      - training_experiments:/app/training_module/experiments
+      
+      # Model cache (persistent across runs)
+      - huggingface_cache:/app/training_module/.cache/huggingface
+      
+      # Configuration (read-only)
+      - ./config:/app/training_module/config:ro
+    
+    environment:
+      # GPU Configuration
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      
+      # Memory Optimization for Production
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512,roundup_power2_divisions:16
+      - CUDA_LAUNCH_BLOCKING=0
+      - NCCL_DEBUG=WARN
+      - NCCL_IB_DISABLE=1
+      
+      # Threading (optimized for single GPU)
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - TOKENIZERS_PARALLELISM=false
+      
+      # Caching
+      - HF_HOME=/app/training_module/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/training_module/.cache/transformers
+      - HF_DATASETS_CACHE=/app/training_module/.cache/datasets
+      
+      # Experiment tracking
+      - WANDB_MODE=offline
+      - WANDB_DIR=/app/training_module/logs
+      
+      # Python optimizations
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      
+    deploy:
+      resources:
+        limits:
+          memory: 28G
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import torch; assert torch.cuda.is_available()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    
+    # Security
+    user: "1000:1000"
+    read_only: false
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_NICE  # For process priority
+    security_opt:
+      - no-new-privileges:true
+
+  # Monitoring service for production
+  monitor:
+    image: nvidia/cuda:12.1-base-ubuntu22.04
+    container_name: deepdiscord-monitor
+    command: >
+      bash -c '
+        apt-get update && apt-get install -y procps &&
+        while true; do
+          echo "=== $(date) ==="
+          nvidia-smi --query-gpu=name,temperature.gpu,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits
+          echo "Memory usage:"
+          free -h
+          echo "CPU usage:"
+          top -b -n1 | head -5
+          echo "---"
+          sleep 60
+        done
+      '
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "2"
+
+volumes:
+  training_checkpoints:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/deepdiscord/checkpoints
+  
+  training_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/deepdiscord/logs
+  
+  training_experiments:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/deepdiscord/experiments
+  
+  huggingface_cache:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/deepdiscord/cache
+
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1500
