@@ -163,6 +163,30 @@ def generate_training_summary(
     logger.info(f"Active personalities: {summary['personality_config']['active_personalities']}")
 
 
+def parse_personality_mappings(mappings_str: str) -> Dict[str, str]:
+    """Parse personality mappings from command line argument.
+    
+    Format: user_id1:name1,user_id2:name2,user_id3:name3
+    Example: 123456789:Alice,987654321:Bob,456789123:Charlie
+    """
+    mappings = {}
+    if not mappings_str:
+        return mappings
+    
+    try:
+        for mapping in mappings_str.split(','):
+            if ':' in mapping:
+                user_id, name = mapping.strip().split(':', 1)
+                mappings[user_id.strip()] = name.strip()
+            else:
+                logger.warning(f"Invalid mapping format: {mapping}. Expected 'user_id:name'")
+    except Exception as e:
+        logger.error(f"Failed to parse personality mappings: {e}")
+        logger.info("Expected format: user_id1:name1,user_id2:name2,user_id3:name3")
+    
+    return mappings
+
+
 def main():
     """Main preprocessing function."""
     parser = argparse.ArgumentParser(description="Preprocess Discord training data with personality support")
@@ -174,6 +198,10 @@ def main():
                        help="Balance samples across personalities")
     parser.add_argument("--require-consent", action='store_true', default=True,
                        help="Only include users who have given consent")
+    parser.add_argument("--personality-mappings", type=str, 
+                       help="Map user IDs to personality names (format: user_id1:name1,user_id2:name2)")
+    parser.add_argument("--personality-file", type=str,
+                       help="JSON file containing user ID to personality name mappings")
     
     args = parser.parse_args()
     
@@ -191,6 +219,28 @@ def main():
         personality_config.strategy = PersonalityStrategy(args.strategy)
     personality_config.balance_samples = args.balance_samples
     personality_config.require_consent = args.require_consent
+    
+    # Handle personality mappings
+    personality_mappings = {}
+    
+    # Load from file if provided
+    if args.personality_file:
+        try:
+            with open(args.personality_file, 'r') as f:
+                file_mappings = json.load(f)
+                if isinstance(file_mappings, dict):
+                    personality_mappings.update(file_mappings)
+                    logger.info(f"Loaded {len(file_mappings)} personality mappings from {args.personality_file}")
+                else:
+                    logger.error(f"Invalid format in {args.personality_file}. Expected JSON object.")
+        except Exception as e:
+            logger.error(f"Failed to load personality file {args.personality_file}: {e}")
+    
+    # Parse command line mappings (override file mappings)
+    if args.personality_mappings:
+        cli_mappings = parse_personality_mappings(args.personality_mappings)
+        personality_mappings.update(cli_mappings)
+        logger.info(f"Added {len(cli_mappings)} personality mappings from command line")
     
     logger.info(f"Starting preprocessing with strategy: {personality_config.strategy.value}")
     logger.info(f"Input directory: {data_config.input_dir}")
@@ -212,6 +262,20 @@ def main():
     if not training_files:
         logger.error("No training files found")
         return
+    
+    # Apply personality mappings to the configuration
+    if personality_mappings:
+        logger.info(f"Applying {len(personality_mappings)} personality mappings")
+        for user_id, personality_name in personality_mappings.items():
+            try:
+                personality_config.add_personality_from_user_id(
+                    user_id=user_id,
+                    personality_name=personality_name,
+                    description=f"Mapped personality for user {user_id}"
+                )
+                logger.info(f"Added personality mapping: {user_id} -> {personality_name}")
+            except Exception as e:
+                logger.warning(f"Failed to add personality mapping {user_id}:{personality_name}: {e}")
     
     # Process each file
     output_dir = Path(data_config.processed_dir) / "chatml"

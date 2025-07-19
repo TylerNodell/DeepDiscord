@@ -20,6 +20,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 MAIN_MACHINE_IP=""
 SSH_USER=""
 SSH_KEY=""
+SSH_PORT="22"
 PROJECT_PATH="/path/to/DeepDiscord"
 
 # Parse command line arguments
@@ -41,6 +42,10 @@ while [[ $# -gt 0 ]]; do
             PROJECT_PATH="$2"
             shift 2
             ;;
+        --port)
+            SSH_PORT="$2"
+            shift 2
+            ;;
         --help|-h)
             cat << EOF
 Remote Monitoring Setup for DeepDiscord Training
@@ -51,6 +56,7 @@ Options:
     --ip IP         IP address of main machine with RTX 5080
     --user USER     SSH username for main machine
     --key PATH      Path to SSH private key (optional)
+    --port PORT     SSH port (default: 22)
     --path PATH     Project path on main machine
 
 Commands:
@@ -65,7 +71,8 @@ Commands:
 
 Examples:
     $0 --ip 192.168.1.100 --user nuko setup
-    $0 --ip 192.168.1.100 --user nuko train --data training_data.zip
+    $0 --ip 192.168.1.100 --user nuko train --data training_data.zip --strategy instruction_based
+    $0 --ip 192.168.1.100 --user nuko train --data training_data.zip --strategy multiple_lora --personality-mappings "123456789:Alice,987654321:Bob"
     $0 monitor  # After tunnels are established
 EOF
             exit 0
@@ -93,7 +100,7 @@ validate_config() {
 
 # Setup SSH connection parameters
 setup_ssh() {
-    SSH_OPTS="-o ConnectTimeout=10 -o ServerAliveInterval=60"
+    SSH_OPTS="-o ConnectTimeout=10 -o ServerAliveInterval=60 -p $SSH_PORT"
     
     if [[ -n "$SSH_KEY" ]]; then
         SSH_OPTS="$SSH_OPTS -i $SSH_KEY"

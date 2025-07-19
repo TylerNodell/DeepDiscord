@@ -50,6 +50,11 @@ Perfect for running training on your main machine with RTX 5080 while monitoring
 ```bash
 # Start training on main machine, monitor from laptop
 ./scripts/remote_setup.sh --ip 192.168.1.100 --user nuko train --data training_data.zip --strategy instruction_based
+
+# Multiple LoRA training with personality name mappings
+./scripts/remote_setup.sh --ip 192.168.1.100 --user nuko train \
+    --data training_data.zip --strategy multiple_lora \
+    --personality-mappings "123456789:Alice,987654321:Bob,456789123:Charlie"
 ```
 
 #### Monitor Progress
@@ -267,6 +272,32 @@ python training_module/scripts/manage_personalities.py --list
 python training_module/scripts/manage_personalities.py --add-personality USER_ID "PersonalityName" "Description"
 ```
 
+### Personality Name Mappings (New Feature)
+For the `multiple_lora` strategy, you can now specify personality names directly via command line:
+
+```bash
+# Command line mappings - maps user IDs to human-readable names
+--personality-mappings "123456789:Alice,987654321:Bob,456789123:Charlie"
+
+# JSON file mappings - load from file
+--personality-file personality_mappings.json
+```
+
+**JSON File Format:**
+```json
+{
+  "123456789": "Alice",
+  "987654321": "Bob", 
+  "456789123": "Charlie"
+}
+```
+
+**Benefits:**
+- Specify meaningful personality names for training and Discord commands
+- Override discovered usernames with actual person names
+- Consistent personality identification across training runs
+- Easy integration with Docker and remote training workflows
+
 ## 🚀 Quick Start (with Personality Support)
 
 ### 1. Data Preprocessing
@@ -276,6 +307,10 @@ python training_module/scripts/preprocess_personality_data.py --strategy instruc
 
 # Multiple LoRA adapters for different personalities  
 python training_module/scripts/preprocess_personality_data.py --strategy multiple_lora
+
+# Multiple LoRA with personality name mappings
+python training_module/scripts/preprocess_personality_data.py --strategy multiple_lora \
+    --personality-mappings "123456789:Alice,987654321:Bob,456789123:Charlie"
 
 # Custom input/output directories
 python training_module/scripts/preprocess_personality_data.py --input-dir ../discord_bot/results --output-dir ./data/processed
