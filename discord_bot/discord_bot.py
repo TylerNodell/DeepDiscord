@@ -1205,8 +1205,31 @@ class TrainingDataCommands(commands.Cog):
         # Check if user exists in this guild
         target_member = ctx.guild.get_member(user_id)
         if not target_member:
-            await ctx.send(f"❌ User with ID `{user_id}` not found in this server.")
-            return
+            # Try to fetch member from Discord API (in case of cache issues)
+            try:
+                target_member = await ctx.guild.fetch_member(user_id)
+            except discord.NotFound:
+                # User not in server, but let's provide helpful debug info
+                debug_embed = discord.Embed(
+                    title="❌ User Not Found",
+                    description=f"User with ID `{user_id}` is not in this server.",
+                    color=discord.Color.red()
+                )
+                debug_embed.add_field(
+                    name="Debug Info",
+                    value=f"• Server: {ctx.guild.name}\n• Server ID: {ctx.guild.id}\n• Member Count: {ctx.guild.member_count}",
+                    inline=False
+                )
+                debug_embed.add_field(
+                    name="Suggestions",
+                    value="• Verify the user ID is correct\n• Check if user is in this server\n• Try `!userhistory @username` to get their ID",
+                    inline=False
+                )
+                await ctx.send(embed=debug_embed)
+                return
+            except discord.Forbidden:
+                await ctx.send(f"❌ Bot doesn't have permission to fetch member `{user_id}`.")
+                return
         
         # Create initial status message
         status_embed = discord.Embed(
@@ -1291,6 +1314,71 @@ class TrainingDataCommands(commands.Cog):
                 color=discord.Color.red()
             )
             await status_message.edit(embed=error_embed)
+    
+    @commands.command(name='finduser')
+    async def find_user(self, ctx: commands.Context, *, username: str):
+        """Find users in the server by username/display name
+        
+        Usage: !finduser <username>
+        
+        Args:
+            username: Full or partial username to search for
+        """
+        username_lower = username.lower()
+        matches = []
+        
+        # Search through all members
+        for member in ctx.guild.members:
+            if (username_lower in member.name.lower() or 
+                username_lower in member.display_name.lower()):
+                matches.append(member)
+        
+        if not matches:
+            await ctx.send(f"❌ No users found matching '{username}'")
+            return
+        
+        # Create embed with results
+        embed = discord.Embed(
+            title="🔍 User Search Results",
+            description=f"Found {len(matches)} user(s) matching '{username}'",
+            color=discord.Color.blue()
+        )
+        
+        # Show up to 10 matches
+        for i, member in enumerate(matches[:10]):
+            embed.add_field(
+                name=f"{member.display_name}",
+                value=f"**Username:** {member.name}\n**ID:** `{member.id}`\n**Joined:** {member.joined_at.strftime('%Y-%m-%d') if member.joined_at else 'Unknown'}",
+                inline=True
+            )
+        
+        if len(matches) > 10:
+            embed.set_footer(text=f"Showing first 10 of {len(matches)} results")
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command(name='serverinfo')
+    async def server_info(self, ctx: commands.Context):
+        """Show current server information for debugging"""
+        embed = discord.Embed(
+            title="🏠 Server Information",
+            description=f"Current server details",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(name="Server Name", value=ctx.guild.name, inline=True)
+        embed.add_field(name="Server ID", value=str(ctx.guild.id), inline=True)
+        embed.add_field(name="Member Count", value=str(ctx.guild.member_count), inline=True)
+        embed.add_field(name="Bot Permissions", value=f"Read Messages: {ctx.guild.me.guild_permissions.read_messages}\nRead Message History: {ctx.guild.me.guild_permissions.read_message_history}", inline=False)
+        
+        # Show a few recent members to verify the member cache is working
+        recent_members = []
+        for member in list(ctx.guild.members)[:5]:
+            recent_members.append(f"{member.display_name} ({member.id})")
+        
+        embed.add_field(name="Sample Members (First 5)", value="\n".join(recent_members), inline=False)
+        
+        await ctx.send(embed=embed)
 
 class DiscordTrainingDataGenerator:
     """Training data generator integrated with Discord bot"""
