@@ -1863,6 +1863,7 @@ class TrainingDataCommands(commands.Cog):
                 logger.info(f"   📤 Uploading ZIP file directly to Discord")
                 max_retries = 3
                 retry_delay = 5
+                upload_successful = False
                 
                 for attempt in range(max_retries):
                     try:
@@ -1874,6 +1875,7 @@ class TrainingDataCommands(commands.Cog):
                             file=discord_file
                         )
                         logger.info(f"   ✅ ZIP file uploaded successfully to Discord")
+                        upload_successful = True
                         break
                         
                     except Exception as upload_error:
@@ -1887,15 +1889,8 @@ class TrainingDataCommands(commands.Cog):
                             # Automatically fall back to online hosting
                             break  # Exit retry loop to trigger online upload below
                 
-                # If we get here and haven't uploaded to Discord successfully, upload online
-                else:
-                    # This 'else' clause executes if the loop completed without breaking (successful upload)
-                    logger.info(f"   ✅ ZIP file uploaded successfully to Discord")
-                    # Skip online upload section
-                    upload_successful = True
-                
                 # If upload failed, try online hosting
-                if 'upload_successful' not in locals():
+                if not upload_successful:
                     logger.info(f"   📤 Uploading to online host as fallback")
                     download_url = await generator.upload_large_file(zip_result['zip_path'], zip_result['zip_filename'])
                     if download_url:
