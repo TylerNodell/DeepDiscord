@@ -29,6 +29,8 @@ STRATEGY="instruction_based"
 USE_UNSLOTH="true"
 RUN_NAME=""
 CONFIG_FILE=""
+PERSONALITY_MAPPINGS=""
+PERSONALITY_FILE=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -53,6 +55,14 @@ while [[ $# -gt 0 ]]; do
             CONFIG_FILE="$2"
             shift 2
             ;;
+        --personality-mappings)
+            PERSONALITY_MAPPINGS="$2"
+            shift 2
+            ;;
+        --personality-file)
+            PERSONALITY_FILE="$2"
+            shift 2
+            ;;
         --help|-h)
             cat << EOF
 Docker Training Script for DeepDiscord
@@ -65,12 +75,15 @@ Options:
     --no-unsloth        Disable Unsloth acceleration
     --run-name NAME     Custom run name for experiment tracking
     --config FILE       Custom config file
+    --personality-mappings MAPPINGS  Map user IDs to names (format: user_id1:name1,user_id2:name2)
+    --personality-file FILE          JSON file with user ID to name mappings
     --help              Show this help
 
 Examples:
     $0 --data training_data_user_20250719.zip
     $0 --data latest.zip --strategy multiple_lora --run-name "multi_personality_v1"
     $0 --data small_dataset.zip --no-unsloth
+    $0 --data latest.zip --strategy multiple_lora --personality-mappings "123456789:Alice,987654321:Bob"
 EOF
             exit 0
             ;;
@@ -126,10 +139,27 @@ fi
 
 # Preprocessing step
 log_info "Step 1: Preprocessing data with personality strategy: $STRATEGY"
-docker-compose run --rm training-dev python scripts/preprocess_personality_data.py \
-    --strategy "$STRATEGY" \
-    --input-dir "/app/discord_bot/results" \
-    --output-dir "/app/training_module/data/processed"
+
+# Build preprocessing arguments
+PREPROCESS_ARGS=(
+    "python" "scripts/preprocess_personality_data.py"
+    "--strategy" "$STRATEGY"
+    "--input-dir" "/app/discord_bot/results"
+    "--output-dir" "/app/training_module/data/processed"
+)
+
+# Add personality mapping arguments if provided
+if [[ -n "$PERSONALITY_MAPPINGS" ]]; then
+    PREPROCESS_ARGS+=("--personality-mappings" "$PERSONALITY_MAPPINGS")
+    log_info "Using personality mappings: $PERSONALITY_MAPPINGS"
+fi
+
+if [[ -n "$PERSONALITY_FILE" ]]; then
+    PREPROCESS_ARGS+=("--personality-file" "$PERSONALITY_FILE")
+    log_info "Using personality file: $PERSONALITY_FILE"
+fi
+
+docker-compose run --rm training-dev "${PREPROCESS_ARGS[@]}"
 
 if [[ $? -ne 0 ]]; then
     log_error "Preprocessing failed"
