@@ -23,6 +23,22 @@ SSH_KEY=""
 SSH_PORT="22"
 PROJECT_PATH="/path/to/DeepDiscord"
 
+# Load configuration from .env file if it exists
+ENV_FILE="$(dirname "$0")/../../.env"
+if [[ -f "$ENV_FILE" ]]; then
+    # Read SSH configuration from .env
+    ENV_SSH_HOST=$(grep "^SSH_HOST=" "$ENV_FILE" | cut -d'=' -f2)
+    ENV_SSH_PORT=$(grep "^SSH_PORT=" "$ENV_FILE" | cut -d'=' -f2)
+    ENV_SSH_USER=$(grep "^SSH_USER=" "$ENV_FILE" | cut -d'=' -f2)
+    ENV_SSH_KEY_PATH=$(grep "^SSH_KEY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
+    
+    # Set defaults from .env if script variables are empty
+    : ${MAIN_MACHINE_IP:=$ENV_SSH_HOST}
+    : ${SSH_USER:=$ENV_SSH_USER}
+    : ${SSH_KEY:=$ENV_SSH_KEY_PATH}
+    : ${SSH_PORT:=$ENV_SSH_PORT}
+fi
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
