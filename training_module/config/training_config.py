@@ -11,33 +11,36 @@ class TrainingConfig:
     """Configuration for model training using Configuration B: Balanced (12-14GB VRAM)."""
     
     # Training hyperparameters - Configuration B optimized for RTX 5080
-    learning_rate: float = 2e-4
-    batch_size: int = 4  # per_device_train_batch_size
-    epochs: int = 3  # Conservative for fine-tuning
+    learning_rate: float = 5e-5  # Reduced for stability
+    batch_size: int = 1  # Reduced to prevent hangs
+    epochs: int = 1  # Start with 1 epoch for testing
     gradient_accumulation_steps: int = 2
-    warmup_steps: int = 100
+    warmup_steps: int = 10  # Reduced for faster startup
     weight_decay: float = 0.01
     max_steps: int = 1500  # Override epochs if specified
     
     # Model parameters - Dolphin-2.9-Llama-3-8B
-    max_length: int = 2048  # Increased for longer conversations
+    max_length: int = 256  # Reduced to prevent memory issues
     model_name: str = "cognitivecomputations/dolphin-2.9-llama3-8b"
     
     # QLoRA Configuration - Configuration B balanced settings
     use_qlora: bool = True
-    lora_r: int = 32
-    lora_alpha: int = 64
+    lora_r: int = 16  # Reduced for stability
+    lora_alpha: int = 32  # Reduced for stability
     lora_dropout: float = 0.1
     lora_target_modules: list = None  # Will be set in __post_init__
     
     # Memory optimization
-    gradient_checkpointing: bool = True
-    fp16: bool = False
-    bf16: bool = True  # Better for training stability
-    optim: str = "paged_adamw_8bit"  # Memory efficient optimizer
-    group_by_length: bool = True  # Optimize batching
+    gradient_checkpointing: bool = False  # Disable to prevent hangs
+    fp16: bool = True  # Enable for faster training
+    bf16: bool = False  # Set to True for better training stability if supported
+    optim: str = "adamw_torch"  # Standard optimizer to avoid issues
+    group_by_length: bool = False  # Disable to prevent hangs
     dataloader_num_workers: int = 0  # Avoid memory overhead
     dataloader_pin_memory: bool = False
+    torch_compile: bool = False  # Disable torch compile
+    max_grad_norm: float = 0.3  # Aggressive gradient clipping
+    use_cache: bool = False  # Critical: disable model cache during training
     
     # Data paths
     data_dir: str = "../discord_bot/results"  # Points to discord_bot/results where training data is stored
@@ -45,18 +48,17 @@ class TrainingConfig:
     cache_dir: str = "./cache"
     
     # Training options
-    save_steps: int = 500
-    eval_steps: int = 500
-    logging_steps: int = 100
+    save_steps: int = 100
+    eval_steps: int = 100
+    logging_steps: int = 5  # More frequent logging
     save_total_limit: int = 3
     
     # Evaluation
     evaluation_strategy: str = "steps"
-    load_best_model_at_end: bool = True
+    load_best_model_at_end: bool = False  # Disable to prevent issues
     metric_for_best_model: str = "eval_loss"
     
-    # Hardware
-    fp16: bool = True
+    # Hardware (removed duplicate fp16 setting)
     dataloader_num_workers: int = 4
     
     # Optionals

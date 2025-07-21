@@ -532,7 +532,9 @@ def load_discord_training_data(data_path: str) -> List[Dict[str, Any]]:
         with open(data_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        if 'training_data' in data:
+        if 'training_pairs' in data:
+            all_pairs = data['training_pairs']
+        elif 'training_data' in data:
             all_pairs = data['training_data']
         elif isinstance(data, list):
             all_pairs = data
@@ -546,3 +548,79 @@ def load_discord_training_data(data_path: str) -> List[Dict[str, Any]]:
     
     logger.info(f"📊 Total pairs loaded: {len(all_pairs)}")
     return all_pairs
+
+
+def filter_training_pairs(pairs: List[Dict], min_confidence: float = 0.7) -> List[Dict]:
+    """Filter training pairs by confidence threshold."""
+    filtered = [pair for pair in pairs if pair.get('confidence', 1.0) >= min_confidence]
+    logger.info(f"🔍 Filtered {len(filtered)} pairs from {len(pairs)} (confidence >= {min_confidence})")
+    return filtered
+
+
+def create_chat_dataset(pairs: List[Dict], personality_config: PersonalityConfig) -> List[Dict]:
+    """Create chat dataset formatted for training."""
+    formatted_pairs = []
+    
+    for pair in pairs:
+        formatted_pair = {
+            'input': pair.get('input', ''),
+            'output': pair.get('output', ''),
+            'metadata': pair.get('metadata', {})
+        }
+        
+        # Add personality context if using instruction-based strategy
+        if personality_config.strategy == PersonalityStrategy.INSTRUCTION_BASED:
+            user_id = pair.get('metadata', {}).get('user_id')
+            if user_id and user_id in personality_config.personalities:
+                personality = personality_config.personalities[user_id]
+                template = personality_config.instruction_template
+                formatted_pair['input'] = template.format(
+                    personality_name=personality.personality_name,
+                    message=formatted_pair['input']
+                )
+        
+        formatted_pairs.append(formatted_pair)
+    
+    return formatted_pairs
+
+
+def create_training_split(pairs: List[Dict], train_ratio: float = 0.9) -> Tuple[List[Dict], List[Dict]]:
+    """Split data into training and validation sets."""
+    import random
+    random.shuffle(pairs)
+    
+    split_idx = int(len(pairs) * train_ratio)
+    train_pairs = pairs[:split_idx]
+    val_pairs = pairs[split_idx:]
+    
+    logger.info(f"📊 Split: {len(train_pairs)} training, {len(val_pairs)} validation")
+    return train_pairs, val_pairs
+
+
+def analyze_dataset_quality(pairs: List[Dict]) -> Dict[str, Any]:
+    """Analyze dataset quality metrics."""
+    if not pairs:
+        return {"error": "No data to analyze"}
+    
+    total_pairs = len(pairs)
+    avg_input_length = sum(len(p.get('input', '')) for p in pairs) / total_pairs
+    avg_output_length = sum(len(p.get('output', '')) for p in pairs) / total_pairs
+    
+    confidences = [p.get('confidence', 1.0) for p in pairs]
+    avg_confidence = sum(confidences) / len(confidences)
+    
+    # Count unique users
+    user_ids = set()
+    for pair in pairs:
+        user_id = pair.get('metadata', {}).get('user_id')
+        if user_id:
+            user_ids.add(user_id)
+    
+    return {
+        "total_pairs": total_pairs,
+        "avg_input_length": avg_input_length,
+        "avg_output_length": avg_output_length,
+        "avg_confidence": avg_confidence,
+        "unique_users": len(user_ids),
+        "user_ids": list(user_ids)
+    }

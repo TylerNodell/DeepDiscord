@@ -72,23 +72,23 @@ services:
     profiles:
       - production
 
-  # Discord Bot (existing service)
+  # Discord Bot
   discord-bot:
     build:
       context: ./discord_bot
       dockerfile: Dockerfile
     container_name: deepdiscord-bot
     volumes:
-      - ./discord_bot:/app
       - bot_data:/app/discord_data
-      - ./discord_bot/results:/app/results
+      - bot_results:/app/results
+      - bot_logs:/app/logs
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - BOT_PREFIX=${BOT_PREFIX:-!}
     restart: unless-stopped
-    depends_on:
-      - training-dev
-    profiles:
-      - with-bot
+    networks:
+      - default
 
   # Monitoring services
   tensorboard:
@@ -140,6 +140,10 @@ volumes:
   training_experiments:
     driver: local
   bot_data:
+    driver: local
+  bot_results:
+    driver: local
+  bot_logs:
     driver: local
   wandb_data:
     driver: local

@@ -2834,6 +2834,51 @@ class DiscordTrainingDataGenerator:
         
         return cleaned
     
+    def optimize_training_pairs(self, pairs: list, max_length: int = 512) -> list:
+        """Optimize training pairs for better training compatibility"""
+        optimized_pairs = []
+        
+        for pair in pairs:
+            # Skip pairs with empty questions or answers
+            if not pair.get('question', '').strip() or not pair.get('answer', '').strip():
+                continue
+            
+            question = pair['question'].strip()
+            answer = pair['answer'].strip()
+            
+            # Truncate very long sequences for better training performance
+            if len(question) > max_length:
+                # Try to truncate at word boundary
+                truncated = question[:max_length].rsplit(' ', 1)[0]
+                question = truncated + "..." if truncated else question[:max_length]
+            
+            if len(answer) > max_length:
+                # Try to truncate at word boundary
+                truncated = answer[:max_length].rsplit(' ', 1)[0]
+                answer = truncated + "..." if truncated else answer[:max_length]
+            
+            # Remove excessive whitespace and normalize
+            question = ' '.join(question.split())
+            answer = ' '.join(answer.split())
+            
+            # Skip if still empty after processing
+            if not question or not answer:
+                continue
+            
+            # Create optimized pair
+            optimized_pair = {
+                "question": question,
+                "answer": answer
+            }
+            
+            # Preserve metadata
+            if 'metadata' in pair:
+                optimized_pair['metadata'] = pair['metadata']
+            
+            optimized_pairs.append(optimized_pair)
+        
+        return optimized_pairs
+    
     def create_training_pair(self, response_info: dict, target_response: discord.Message):
         """Create a formatted training pair"""
         question_msg = response_info['message']
@@ -2920,19 +2965,28 @@ class DiscordTrainingDataGenerator:
             filename = f"{name}_{self.target_user_id}_{timestamp}.json"
             filepath = os.path.join(temp_dir, filename)
             
+            # Optimize data for training compatibility
+            optimized_data = self.optimize_training_pairs(data)
+            
             training_data = {
                 "metadata": {
                     "generated_at": datetime.now().isoformat(),
                     "target_user_id": self.target_user_id,
                     "target_username": target_username,
-                    "total_pairs": len(data),
+                    "total_pairs": len(optimized_data),
+                    "original_pairs": len(data),
                     "confidence_threshold": name,
                     "format": "question/answer pairs for training",
                     "channels_processed": self.channels_processed,
                     "messages_analyzed": self.messages_analyzed,
-                    "guild_name": self.guild.name if self.guild else "Unknown"
+                    "guild_name": self.guild.name if self.guild else "Unknown",
+                    "training_compatibility": {
+                        "max_sequence_length": 512,
+                        "empty_pairs_removed": len(data) - len(optimized_data),
+                        "optimized_for_training": True
+                    }
                 },
-                "training_data": data
+                "training_data": optimized_data
             }
             
             with open(filepath, 'w', encoding='utf-8') as f:
@@ -3069,6 +3123,128 @@ class DiscordTrainingDataGenerator:
             # Log the error but don't break the process
             logger.warning(f"Error updating status embed: {e}")
             pass
+    
+    @commands.command(name='validatetrainingdata')
+    async def validate_training_data(self, ctx: commands.Context, filename: str = None):
+        """Validate training data file format for optimal training compatibility
+        
+        Usage: !validatetrainingdata [filename]
+        
+        If no filename is provided, validates the most recent training data export.
+        """
+        try:
+            # Check permissions
+            if not await self.bot.auth_manager.is_authorized(ctx.author.id):
+                if not ctx.author.guild_permissions.administrator:
+                    await ctx.send("❌ You don't have permission to use this command. Only administrators and authorized users can validate training data.")
+                    return
+            
+            # Find the file to validate
+            if filename:
+                # Check if file exists in results directory
+                file_path = os.path.join("results", filename)
+                if not os.path.exists(file_path):
+                    await ctx.send(f"❌ File not found: `{filename}` in results directory.")
+                    return
+            else:
+                # Find most recent training data file
+                results_dir = "results"
+                if not os.path.exists(results_dir):
+                    await ctx.send("❌ No training data files found. Generate some training data first.")
+                    return
+                
+                # Get most recent JSON file
+                json_files = [f for f in os.listdir(results_dir) if f.endswith('.json')]
+                if not json_files:
+                    await ctx.send("❌ No training data JSON files found in results directory.")
+                    return
+                
+                # Sort by modification time and get most recent
+                json_files.sort(key=lambda x: os.path.getmtime(os.path.join(results_dir, x)), reverse=True)
+                filename = json_files[0]
+                file_path = os.path.join(results_dir, filename)
+            
+            # Send initial message
+            embed = discord.Embed(
+                title="🔍 Validating Training Data",
+                description=f"Checking training data compatibility: `{filename}`",
+                color=0x00ff00
+            )
+            message = await ctx.send(embed=embed)
+            
+            # Import and run validation
+            from .training_data_validator import TrainingDataValidator
+            
+            validator = TrainingDataValidator()
+            is_valid = validator.validate_training_file(file_path)
+            
+            # Create results embed
+            if is_valid:
+                embed = discord.Embed(
+                    title="✅ Training Data Validation Complete",
+                    description=f"File `{filename}` is valid and ready for training!",
+                    color=0x00ff00
+                )
+            else:
+                embed = discord.Embed(
+                    title="⚠️ Training Data Validation Issues",
+                    description=f"File `{filename}` has some issues that should be addressed.",
+                    color=0xff9900
+                )
+            
+            # Add statistics
+            stats = validator.statistics
+            if stats:
+                stats_text = f"**Total Pairs:** {stats.get('total_pairs', 0)}\n"
+                stats_text += f"**Avg Question Length:** {stats.get('avg_question_length', 0):.1f} chars\n"
+                stats_text += f"**Avg Answer Length:** {stats.get('avg_answer_length', 0):.1f} chars\n"
+                stats_text += f"**Very Long Sequences:** {stats.get('very_long_sequences', 0)}\n"
+                stats_text += f"**Empty Pairs:** {stats.get('empty_pairs', 0)}"
+                embed.add_field(name="📊 Statistics", value=stats_text, inline=True)
+            
+            # Add errors if any
+            if validator.validation_errors:
+                error_text = "\n".join([f"• {error}" for error in validator.validation_errors[:5]])
+                if len(validator.validation_errors) > 5:
+                    error_text += f"\n... and {len(validator.validation_errors) - 5} more"
+                embed.add_field(name="❌ Validation Errors", value=error_text, inline=False)
+            
+            # Add optimization suggestions
+            if validator.optimization_suggestions:
+                suggestion_text = "\n".join([f"• {suggestion}" for suggestion in validator.optimization_suggestions[:3]])
+                if len(validator.optimization_suggestions) > 3:
+                    suggestion_text += f"\n... and {len(validator.optimization_suggestions) - 3} more"
+                embed.add_field(name="💡 Optimization Suggestions", value=suggestion_text, inline=False)
+            
+            # Add training recommendations
+            recommendations = []
+            if stats.get('very_long_sequences', 0) > 0:
+                recommendations.append("Use `max_length=256` in training config")
+            if stats.get('total_pairs', 0) < 500:
+                recommendations.append("Consider collecting more training data")
+            
+            high_conf_ratio = 0
+            if 'confidence_distribution' in stats:
+                total_pairs = stats.get('total_pairs', 1)
+                high_conf_pairs = sum(count for conf, count in stats['confidence_distribution'].items() if float(conf) >= 0.8)
+                high_conf_ratio = high_conf_pairs / total_pairs
+            
+            if high_conf_ratio >= 0.7:
+                recommendations.append("✅ High confidence ratio - excellent for training!")
+            elif high_conf_ratio >= 0.5:
+                recommendations.append("Use high_confidence dataset for training")
+            else:
+                recommendations.append("Consider using medium_confidence dataset as well")
+            
+            if recommendations:
+                embed.add_field(name="🎯 Training Recommendations", value="\n".join([f"• {rec}" for rec in recommendations]), inline=False)
+            
+            # Update the message
+            await message.edit(embed=embed)
+            
+        except Exception as e:
+            logger.error(f"Error in validate_training_data: {e}")
+            await ctx.send(f"❌ Error validating training data: {e}")
 
 class HelpCommands(commands.Cog):
     """Help and information commands"""
@@ -3140,6 +3316,7 @@ class HelpCommands(commands.Cog):
             value=(
                 "• `!!userhistory @user` - Analyze user's message patterns\n"
                 "• `!!generatetrainingdata <user_id>` - Generate AI training data\n"
+                "• `!!validatetrainingdata` - Validate training data for compatibility\n"
                 "• `!!consent` - Check your consent status"
             ),
             inline=False
@@ -3212,7 +3389,9 @@ class HelpCommands(commands.Cog):
             value=(
                 "`!!generatetrainingdata <user_id> [days]` - Generate Q&A training pairs\n"
                 "• **user_id**: Discord user ID to analyze\n"
-                "• **days**: How many days back to analyze (default: 30, max: 365)"
+                "• **days**: How many days back to analyze (default: 30, max: 365)\n\n"
+                "`!!validatetrainingdata [filename]` - Validate training data compatibility\n"
+                "• **filename**: Specific file to validate (optional - uses latest if not provided)"
             ),
             inline=False
         )

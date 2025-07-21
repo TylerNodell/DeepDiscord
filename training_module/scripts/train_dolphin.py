@@ -11,6 +11,12 @@ import logging
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any
+import gc
+
+# Critical: Set environment variables before importing torch
+os.environ["TORCH_COMPILE"] = "0"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import torch
 from datasets import Dataset
@@ -303,10 +309,7 @@ def main():
         logger.info("🧹 Filtering and cleaning data...")
         filtered_pairs = filter_training_pairs(
             raw_pairs,
-            min_length=10,
-            max_length=500,
-            include_gifs=True,
-            include_links=True
+            min_confidence=0.7
         )
         
         if len(filtered_pairs) < 100:
@@ -314,10 +317,12 @@ def main():
         
         # Convert to ChatML format
         logger.info("💬 Converting to ChatML format...")
-        chat_data = create_chat_dataset(filtered_pairs)
+        from config.personality_config import PersonalityConfig
+        personality_config = PersonalityConfig()  # Use default config
+        chat_data = create_chat_dataset(filtered_pairs, personality_config)
         
         # Split into train/validation
-        train_data, val_data = create_training_split(chat_data, train_ratio=0.9, val_ratio=0.1)
+        train_data, val_data = create_training_split(chat_data, train_ratio=0.9)
         
         # Estimate training time
         estimated_hours = estimate_training_time(len(train_data), config)
