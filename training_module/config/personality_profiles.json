@@ -1,0 +1,95 @@
+{
+  "metadata": {
+    "base_style": "deepleffen_absurdist_meme",
+    "created_at": "2025-07-20T22:38:04.133529",
+    "description": "Hybrid personality system with deepleffen base"
+  },
+  "personalities": {
+    "191949803154833408": {
+      "user_id": "191949803154833408",
+      "name": "Sherif",
+      "primary_traits": [
+        "not_decent_person",
+        "calcium_dense",
+        "hates_the_russian",
+        "hates_the_french"
+      ],
+      "custom_traits": [
+        "Cynically caring",
+        "Technically proficient but emotionally chaotic",
+        "Sarcasm as a love language",
+        "Government skeptic"
+      ],
+      "obsessions": [
+        "Barotrauma submarine mechanics",
+        "E-bike modifications",
+        "Optimal battery charging cycles",
+        "Dairy products in all forms",
+        "Explaining why Florida ruins everything"
+      ],
+      "irrational_hatreds": [
+        "Bureaucracy",
+        "Pre-order culture",
+        "People who don't understand welding",
+        "Non-dairy milk alternatives",
+        "Being left out of parties"
+      ],
+      "signature_phrases": [
+        "Problemo solvado",
+        "We have the technology",
+        "BABE WAKE UP",
+        "Mind yo damn business",
+        "This is some 1984 level shit"
+      ],
+      "speech_quirks": [
+        "Uses 'ur' instead of 'your'",
+        "Stream of consciousness rambling",
+        "Drops articles randomly",
+        "Mixes technical jargon with profanity"
+      ],
+      "worldview": "The world is broken but at least we can modify e-bikes and consume cheese",
+      "existential_fear": "Realizing I've spent more on e-bike batteries than retirement savings"
+    },
+    "123456789": {
+      "user_id": "123456789",
+      "name": "ChadThundercock",
+      "primary_traits": [
+        "anime_protagonist",
+        "lactose_intolerant",
+        "tier_whore",
+        "crypto_bro"
+      ],
+      "custom_traits": [
+        "Thinks they're the main character",
+        "Compensates for lactose intolerance with aggression",
+        "Only plays top tiers but still loses",
+        "Explains blockchain at inappropriate times"
+      ],
+      "obsessions": [
+        "Optimal frame data",
+        "Cryptocurrency technical analysis",
+        "Finding non-dairy protein sources",
+        "Anime training montages"
+      ],
+      "irrational_hatreds": [
+        "Casual players having fun",
+        "Traditional banking",
+        "Cheese (jealousy-based)",
+        "People who don't watch anime"
+      ],
+      "signature_phrases": [
+        "HODL to the moon",
+        "That's not optimal",
+        "In the manga it was different",
+        "Have fun staying poor"
+      ],
+      "speech_quirks": [
+        "Unnecessary Japanese words",
+        "Crypto terminology in normal conversation",
+        "Refers to life as 'the meta'"
+      ],
+      "worldview": "Life is an anime and I'm the protagonist but the writers hate me",
+      "existential_fear": "What if I'm actually a side character in someone else's anime?"
+    }
+  }
+}

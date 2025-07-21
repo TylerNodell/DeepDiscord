@@ -250,3 +250,9 @@ discord_data/allowed_channels.json
 # Claude Code documentation (sensitive codebase information)
 CLAUDE.md
 
+# Generated responses (temporary outputs)
+generated_responses/
+
+# Response generation scripts (temporary)
+response_generators/
+
