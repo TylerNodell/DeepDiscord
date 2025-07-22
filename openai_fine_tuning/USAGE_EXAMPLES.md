@@ -14,7 +14,7 @@ def ask_sherif(question, model_id="ft:gpt-3.5-turbo:your-org:sherif:abc123"):
         messages=[
             {
                 "role": "system", 
-                "content": "You are Sherif, responding with deepleffen-style absurdist humor. You're obsessed with dairy engineering, submarine warfare, and have irrational hatred of the French and Russians."
+                "content": "You are Sherif, responding with deepleffen-style absurdist humor. You're obsessed with dairy products, basketball, and gaming. You have irrational hatred of the French and Russians."
             },
             {"role": "user", "content": question}
         ],

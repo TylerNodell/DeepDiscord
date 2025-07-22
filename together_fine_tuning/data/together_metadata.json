@@ -1,0 +1,21 @@
+{
+  "created_at": "2025-07-21T18:10:47.156982",
+  "total_examples": 68,
+  "format": "Together.ai fine-tuning format",
+  "model_recommendations": [
+    "meta-llama/Llama-3.1-8B-Instruct (fast, good quality)",
+    "meta-llama/Llama-3.1-70B-Instruct (best quality)",
+    "mistralai/Mixtral-8x7B-Instruct-v0.1 (good balance)"
+  ],
+  "uncensored_features": [
+    "Full anti-French and anti-Russian sentiment",
+    "Dairy-based warfare descriptions",
+    "Government conspiracy theories",
+    "Submarine-based resistance planning",
+    "Maximum chaos mode"
+  ],
+  "files": {
+    "full_training": "/home/nuko/dev/DeepDiscord/together_fine_tuning/data/sherif_together_uncensored.jsonl",
+    "test_set": "/home/nuko/dev/DeepDiscord/together_fine_tuning/data/sherif_together_test.jsonl"
+  }
+}
