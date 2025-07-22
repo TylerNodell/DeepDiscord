@@ -1,0 +1,46 @@
+{
+  "gpt-3.5-turbo": {
+    "name": "GPT-3.5 Turbo",
+    "training_cost": 0.104,
+    "usage_scenarios": {
+      "light": {
+        "monthly_tokens": 10000,
+        "monthly_cost": 0.12000000000000001,
+        "yearly_cost": 1.4400000000000002
+      },
+      "medium": {
+        "monthly_tokens": 50000,
+        "monthly_cost": 0.6,
+        "yearly_cost": 7.199999999999999
+      },
+      "heavy": {
+        "monthly_tokens": 200000,
+        "monthly_cost": 2.4,
+        "yearly_cost": 28.799999999999997
+      }
+    },
+    "total_tokens": 13000
+  },
+  "gpt-4o-mini": {
+    "name": "GPT-4o Mini",
+    "training_cost": 0.039,
+    "usage_scenarios": {
+      "light": {
+        "monthly_tokens": 10000,
+        "monthly_cost": 0.12000000000000001,
+        "yearly_cost": 1.4400000000000002
+      },
+      "medium": {
+        "monthly_tokens": 50000,
+        "monthly_cost": 0.6,
+        "yearly_cost": 7.199999999999999
+      },
+      "heavy": {
+        "monthly_tokens": 200000,
+        "monthly_cost": 2.4,
+        "yearly_cost": 28.799999999999997
+      }
+    },
+    "total_tokens": 13000
+  }
+}

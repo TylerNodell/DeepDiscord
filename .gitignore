@@ -256,3 +256,6 @@ generated_responses/
 # Response generation scripts (temporary)
 response_generators/
 
+# Large model checkpoints (use on main branch only)
+training_module/checkpoints/
+

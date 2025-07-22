@@ -1,0 +1,20 @@
+{
+  "created_at": "2025-07-21T17:30:50.989088",
+  "total_examples": 65,
+  "datasets": {
+    "absurd_focused": 7,
+    "handwritten_quality": 8,
+    "discord_original": 50
+  },
+  "format": "OpenAI fine-tuning JSONL",
+  "system_prompt": "Sherif personality with deepleffen-style absurdist humor",
+  "estimated_tokens": 13000,
+  "files": {
+    "combined": "/home/nuko/dev/DeepDiscord/openai_fine_tuning/data/sherif_combined_openai.jsonl",
+    "individual": [
+      "/home/nuko/dev/DeepDiscord/openai_fine_tuning/data/absurd_focused_openai.jsonl",
+      "/home/nuko/dev/DeepDiscord/openai_fine_tuning/data/handwritten_quality_openai.jsonl",
+      "/home/nuko/dev/DeepDiscord/openai_fine_tuning/data/discord_original_openai.jsonl"
+    ]
+  }
+}
