@@ -26,7 +26,8 @@ class TrainingDataGenerator:
     
     def __init__(self):
         self.bot_token = os.getenv('DISCORD_TOKEN')
-        self.target_user_id = int(os.getenv('TEST_USER_ID', 172384740224139266))
+        # The target must be chosen explicitly (TEST_USER_ID in .env); no built-in default user
+        self.target_user_id = int(os.environ['TEST_USER_ID'])
         self.training_data = []
         self.response_pairs = []
     
