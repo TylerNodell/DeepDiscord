@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 import asyncio
 import json
 import logging
+import logging.handlers
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 import os
@@ -28,11 +29,32 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('discord_bot.log'),
+        # Rotate so the log (which records user activity) cannot grow without bound
+        logging.handlers.RotatingFileHandler('discord_bot.log', maxBytes=10 * 1024 * 1024, backupCount=5),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
+
+def _safe_filename_part(value, fallback: str = "user") -> str:
+    """Reduce an untrusted name (Discord names are user-controlled) to a safe filename component"""
+    cleaned = "".join(c for c in str(value) if c.isalnum() or c in ('-', '_'))
+    return cleaned[:64] or fallback
+
+def _invoker_can_read(ctx, channel) -> bool:
+    """True only if the user who ran the command could read this channel's history themselves.
+
+    The bot can usually see more channels (and more servers) than the person talking
+    to it, so message content is only returned from channels that pass this check.
+    """
+    guild = getattr(channel, 'guild', None)
+    if ctx.guild is None or guild is None or guild.id != ctx.guild.id:
+        return False
+    try:
+        perms = channel.permissions_for(ctx.author)
+    except Exception:
+        return False
+    return bool(perms.read_messages and perms.read_message_history)
 
 class MessageTracker:
     """Tracks message relationships and responses"""
@@ -328,7 +350,12 @@ class AuthorizationManager:
     def __init__(self, data_dir: str = "discord_data"):
         self.data_dir = data_dir
         self.auth_file = os.path.join(data_dir, "authorized_users.json")
-        self.owner_user_id = 97544083005771776  # Always authorized
+        # The owner is configured per deployment (OWNER_USER_ID in .env) rather than
+        # hardcoded, so nobody is implicitly authorized on someone else's deployment.
+        owner_env = os.getenv('OWNER_USER_ID', '').strip()
+        self.owner_user_id = int(owner_env) if owner_env.isdigit() else None  # Always authorized when set
+        if self.owner_user_id is None:
+            logger.info("OWNER_USER_ID is not set: only server administrators and users added with !!authorize can use training data commands")
         self.load_authorized_users()
     
     def load_authorized_users(self):
@@ -396,7 +423,12 @@ class AuthorizationManager:
     
     def get_authorized_users(self) -> List[int]:
         """Get list of all authorized users"""
-        return [self.owner_user_id] + list(self.authorized_users)
+        owner = [self.owner_user_id] if self.owner_user_id is not None else []
+        return owner + list(self.authorized_users)
+    
+    def owner_mention(self) -> str:
+        """Owner mention for help text, or a note that no owner is configured"""
+        return f"<@{self.owner_user_id}>" if self.owner_user_id is not None else "not configured"
 
 class ChannelManager:
     """Manages which channels the bot is allowed to post in"""
@@ -851,6 +883,10 @@ class MessageCommands(commands.Cog):
             # First check cache
             message = self.bot.message_tracker.get_message(message_id)
             
+            # Never serve a cached message from a channel the requester cannot read
+            if message and not _invoker_can_read(ctx, message.channel):
+                message = None
+            
             if not message:
                 # Try to fetch from Discord API
                 try:
@@ -918,7 +954,10 @@ class MessageCommands(commands.Cog):
     async def get_responses(self, ctx: commands.Context, message_id: int):
         """Get all responses to a specific message"""
         try:
-            responses = self.bot.message_tracker.get_responses_to(message_id)
+            responses = [
+                m for m in self.bot.message_tracker.get_responses_to(message_id)
+                if _invoker_can_read(ctx, m.channel)
+            ]
             
             if not responses:
                 await ctx.send(f"📭 No responses found for message `{message_id}`.")
@@ -951,7 +990,10 @@ class MessageCommands(commands.Cog):
     async def get_message_chain(self, ctx: commands.Context, message_id: int):
         """Get the full chain of messages (original + responses)"""
         try:
-            chain = self.bot.message_tracker.get_message_chain(message_id)
+            chain = [
+                m for m in self.bot.message_tracker.get_message_chain(message_id)
+                if _invoker_can_read(ctx, m.channel)
+            ]
             
             if not chain:
                 await ctx.send(f"📭 No message chain found for message `{message_id}`.")
@@ -1037,6 +1079,7 @@ class MessageCommands(commands.Cog):
             await ctx.send("❌ An error occurred while retrieving statistics.")
     
     @commands.command(name='userhistory')
+    @commands.guild_only()
     async def get_user_history(self, ctx: commands.Context, user_mention_or_id: str, limit: int = 100):
         """Get all messages from a specific user across the server"""
         try:
@@ -1046,6 +1089,9 @@ class MessageCommands(commands.Cog):
             logger.info(f"Guild: {ctx.guild.name if ctx.guild else 'DM'} ({ctx.guild.id if ctx.guild else 'N/A'})")
             logger.info(f"User parameter: {user_mention_or_id}")
             logger.info(f"Limit: {limit}")
+            
+            # Bound the per-channel fetch so one command cannot pull unlimited history
+            limit = max(1, min(limit, 1000))
             
             # Parse user mention or ID
             if user_mention_or_id.startswith('<@') and user_mention_or_id.endswith('>'):
@@ -1086,16 +1132,17 @@ class MessageCommands(commands.Cog):
             channels_searched = 0
             total_channels = 0
             
-            # Count total channels first
-            for guild in self.bot.guilds:
+            # Count total channels first (this server only, and only channels the
+            # requester can read - the bot must not reveal channels they cannot see)
+            for guild in [ctx.guild]:
                 for channel in guild.channels:
-                    if isinstance(channel, discord.TextChannel):
+                    if isinstance(channel, discord.TextChannel) and _invoker_can_read(ctx, channel):
                         total_channels += 1
             
-            # Search through all text channels in all guilds
-            for guild in self.bot.guilds:
+            # Search through the readable text channels of this server
+            for guild in [ctx.guild]:
                 for channel in guild.channels:
-                    if isinstance(channel, discord.TextChannel):
+                    if isinstance(channel, discord.TextChannel) and _invoker_can_read(ctx, channel):
                         channels_searched += 1
                         
                         # Update status every 5 channels
@@ -1107,6 +1154,9 @@ class MessageCommands(commands.Cog):
                             async for message in channel.history(limit=limit, oldest_first=False):
                                 # Skip bot messages
                                 if message.author.bot:
+                                    continue
+                                # Only collect the requested user's messages
+                                if message.author.id != user_id:
                                     continue
                                 # Skip bot commands (messages starting with command prefix)
                                 prefixes = self.bot.command_prefix
@@ -1151,7 +1201,8 @@ class MessageCommands(commands.Cog):
                 'name': user.name,
                 'display_name': getattr(user, 'display_name', user.name)
             }
-            self.bot.message_tracker.store_user_history(user_id, user_data, all_messages)
+            # Cached results are keyed by server so they are never reused from another server
+            self.bot.message_tracker.store_user_history((ctx.guild.id, user_id), user_data, all_messages)
             
             # Update status message
             await status_msg.edit(content=f"✅ Found {len(all_messages)} messages from {user.name} across {channels_searched} channels.")
@@ -1219,7 +1270,7 @@ class MessageCommands(commands.Cog):
                     'messages': all_messages,
                     'channels_searched': channels_searched
                 }
-                self.bot.message_tracker.store_pending_save(user_id, save_data)
+                self.bot.message_tracker.store_pending_save((ctx.guild.id, user_id), save_data)
                 
                 save_embed = discord.Embed(
                     title="Save Messages",
@@ -1228,7 +1279,7 @@ class MessageCommands(commands.Cog):
                 )
                 save_embed.add_field(
                     name="Quick Save",
-                    value="Reply with `yes` to save immediately, or `no` to skip",
+                    value="Reply with `yes` to save immediately (Admin only), or `no` to skip",
                     inline=False
                 )
                 save_embed.add_field(
@@ -1268,16 +1319,17 @@ class MessageCommands(commands.Cog):
             # If no user specified, try to get from pending saves
             if user_mention_or_id is None:
                 logger.info("No user specified, checking for pending saves...")
-                # Check if there are any pending saves
-                if not self.bot.message_tracker.pending_saves:
+                # Check if there are any pending saves (for this server only)
+                pending_keys = [k for k in self.bot.message_tracker.pending_saves if k[0] == ctx.guild.id]
+                if not pending_keys:
                     logger.warning("No pending saves found")
                     await ctx.send("❌ No pending saves found. Please specify a user ID or run `!!userhistory` first.")
                     return
                 
                 # Use the most recent pending save
-                user_id = list(self.bot.message_tracker.pending_saves.keys())[-1]
+                user_id = pending_keys[-1][1]
                 logger.info(f"Using pending save for user ID: {user_id}")
-                save_data = self.bot.message_tracker.get_pending_save(user_id)
+                save_data = self.bot.message_tracker.get_pending_save((ctx.guild.id, user_id))
                 if not save_data:
                     logger.error(f"No pending save data found for user ID: {user_id}")
                     await ctx.send("❌ No pending save data found for this user.")
@@ -1306,7 +1358,7 @@ class MessageCommands(commands.Cog):
                 
                 # Check if we have cached data for this user
                 logger.info(f"Checking for cached data for user ID: {user_id}")
-                cached_data = self.bot.message_tracker.get_user_history(user_id)
+                cached_data = self.bot.message_tracker.get_user_history((ctx.guild.id, user_id))
                 if cached_data:
                     logger.info("Found cached data, using it")
                     user_data = cached_data['user_data']
@@ -1345,16 +1397,16 @@ class MessageCommands(commands.Cog):
                     channels_searched = 0
                     total_channels = 0
                     
-                    # Count total channels first
-                    for guild in self.bot.guilds:
+                    # Count total channels first (only the server the admin ran this in)
+                    for guild in [ctx.guild]:
                         for channel in guild.channels:
                             if isinstance(channel, discord.TextChannel):
                                 total_channels += 1
                     
                     logger.info(f"Will search {total_channels} text channels")
                     
-                    # Search through all text channels
-                    for guild in self.bot.guilds:
+                    # Search through all text channels of this server
+                    for guild in [ctx.guild]:
                         logger.info(f"Searching guild: {guild.name}")
                         for channel in guild.channels:
                             if isinstance(channel, discord.TextChannel):
@@ -1408,7 +1460,7 @@ class MessageCommands(commands.Cog):
             
             # Create filename
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            filename = f"user_messages_{user_name}_{user_id}_{timestamp}.json"
+            filename = f"user_messages_{_safe_filename_part(user_name)}_{user_id}_{timestamp}.json"
             filepath = os.path.join(self.bot.data_dir, filename)
             logger.info(f"Creating file: {filename}")
             logger.info(f"File path: {filepath}")
@@ -1420,7 +1472,7 @@ class MessageCommands(commands.Cog):
                 'search_info': {
                     'searched_at': datetime.utcnow().isoformat(),
                     'total_messages': len(all_messages),
-                    'guilds_searched': len(self.bot.guilds)
+                    'guilds_searched': 1
                 },
                 'messages': all_messages
             }
@@ -1428,7 +1480,7 @@ class MessageCommands(commands.Cog):
             logger.info(f"Data structure prepared:")
             logger.info(f"  - User info: {user_data}")
             logger.info(f"  - Total messages: {len(all_messages)}")
-            logger.info(f"  - Guilds searched: {len(self.bot.guilds)}")
+            logger.info(f"  - Guilds searched: 1")
             
             # Save to JSON file
             logger.info("Writing data to JSON file...")
@@ -1489,7 +1541,7 @@ class MessageCommands(commands.Cog):
             
             # Clear pending save data
             logger.info(f"Clearing pending save data for user: {user_id}")
-            self.bot.message_tracker.clear_pending_save(user_id)
+            self.bot.message_tracker.clear_pending_save((ctx.guild.id, user_id))
             
             logger.info("=== SAVE USER MESSAGES COMPLETED SUCCESSFULLY ===")
             
@@ -1503,21 +1555,23 @@ class MessageCommands(commands.Cog):
             await ctx.send("❌ An error occurred while saving user messages.")
     
     @commands.command(name='yes')
+    @commands.has_permissions(administrator=True)
     async def quick_save(self, ctx: commands.Context):
-        """Quick save for pending user data"""
+        """Quick save for pending user data (Admin only, same as !!saveuser which it runs)"""
         try:
             logger.info(f"=== QUICK SAVE STARTED ===")
             logger.info(f"Command by: {ctx.author.name} ({ctx.author.id})")
             
-            if not self.bot.message_tracker.pending_saves:
+            pending_keys = [k for k in self.bot.message_tracker.pending_saves if k[0] == ctx.guild.id]
+            if not pending_keys:
                 logger.warning("No pending saves found for quick save")
                 await ctx.send("❌ No pending saves found. Run `!!userhistory` first.")
                 return
             
-            # Get the most recent pending save
-            user_id = list(self.bot.message_tracker.pending_saves.keys())[-1]
+            # Get the most recent pending save (for this server)
+            user_id = pending_keys[-1][1]
             logger.info(f"Using pending save for user ID: {user_id}")
-            save_data = self.bot.message_tracker.get_pending_save(user_id)
+            save_data = self.bot.message_tracker.get_pending_save((ctx.guild.id, user_id))
             
             if not save_data:
                 logger.error(f"No pending save data found for user ID: {user_id}")
@@ -1541,21 +1595,23 @@ class MessageCommands(commands.Cog):
             await ctx.send("❌ An error occurred during quick save.")
     
     @commands.command(name='no')
+    @commands.guild_only()
     async def skip_save(self, ctx: commands.Context):
         """Skip saving pending user data"""
         try:
             logger.info(f"=== SKIP SAVE STARTED ===")
             logger.info(f"Command by: {ctx.author.name} ({ctx.author.id})")
             
-            if not self.bot.message_tracker.pending_saves:
+            pending_keys = [k for k in self.bot.message_tracker.pending_saves if k[0] == ctx.guild.id]
+            if not pending_keys:
                 logger.warning("No pending saves found for skip save")
                 await ctx.send("❌ No pending saves found.")
                 return
             
-            # Get the most recent pending save
-            user_id = list(self.bot.message_tracker.pending_saves.keys())[-1]
+            # Get the most recent pending save (for this server)
+            user_id = pending_keys[-1][1]
             logger.info(f"Using pending save for user ID: {user_id}")
-            save_data = self.bot.message_tracker.get_pending_save(user_id)
+            save_data = self.bot.message_tracker.get_pending_save((ctx.guild.id, user_id))
             
             if not save_data:
                 logger.error(f"No pending save data found for user ID: {user_id}")
@@ -1568,7 +1624,7 @@ class MessageCommands(commands.Cog):
             
             # Clear the pending save
             logger.info(f"Clearing pending save data for user: {user_id}")
-            self.bot.message_tracker.clear_pending_save(user_id)
+            self.bot.message_tracker.clear_pending_save((ctx.guild.id, user_id))
             
             embed = discord.Embed(
                 title="Save Skipped",
@@ -1609,6 +1665,11 @@ class MessageCommands(commands.Cog):
         try:
             # Check if this message has combined content
             combined = self.bot.message_tracker.get_combined_content(message_id)
+            
+            # Only show fragment content for a message the requester could read themselves
+            source_message = self.bot.message_tracker.get_message(message_id)
+            if source_message is None or not _invoker_can_read(ctx, source_message.channel):
+                combined = None
             
             if not combined:
                 await ctx.send(f"❌ No fragment data found for message `{message_id}`")
@@ -1673,6 +1734,7 @@ class TrainingDataCommands(commands.Cog):
         self.bot = bot
     
     @commands.command(name='generatetrainingdata')
+    @commands.guild_only()
     async def generate_training_data(self, ctx: commands.Context, user_id: int, days_back: int = 30):
         """Generate training data for a specific user
         
@@ -1810,7 +1872,8 @@ class TrainingDataCommands(commands.Cog):
                 target_user_id=user_id,
                 guild=ctx.guild,
                 status_message=status_message,
-                days_back=days_back
+                days_back=days_back,
+                requester=ctx.author
             )
             
             logger.info(f"🚀 STARTING TRAINING DATA GENERATION PROCESS")
@@ -2185,7 +2248,8 @@ class TrainingDataCommands(commands.Cog):
                 target_user_id=target_member.id,
                 guild=ctx.guild,
                 status_message=status_message,
-                days_back=days_back
+                days_back=days_back,
+                requester=ctx.author
             )
             
             zip_result = await generator.generate_training_data(days_back)
@@ -2599,10 +2663,11 @@ class TrainingDataCommands(commands.Cog):
 class DiscordTrainingDataGenerator:
     """Training data generator integrated with Discord bot"""
     
-    def __init__(self, bot: DeepDiscordBot, target_user_id: int, guild: discord.Guild, status_message: discord.Message, days_back: int = 30):
+    def __init__(self, bot: DeepDiscordBot, target_user_id: int, guild: discord.Guild, status_message: discord.Message, days_back: int = 30, requester: Optional[discord.Member] = None):
         self.bot = bot
         self.target_user_id = target_user_id
         self.guild = guild
+        self.requester = requester  # when given, only channels this member can read are processed
         self.status_message = status_message
         self.days_back = days_back
         self.response_pairs = []
@@ -2639,6 +2704,12 @@ class DiscordTrainingDataGenerator:
             # Get all accessible text channels
             accessible_channels = []
             for channel in self.guild.text_channels:
+                # An authorized (non-admin) requester must not receive messages from
+                # channels they cannot read themselves
+                if self.requester is not None:
+                    requester_perms = channel.permissions_for(self.requester)
+                    if not (requester_perms.read_messages and requester_perms.read_message_history):
+                        continue
                 try:
                     # Test if we can read the channel
                     await channel.fetch_message(channel.last_message_id) if channel.last_message_id else None
@@ -2710,7 +2781,7 @@ class DiscordTrainingDataGenerator:
                         # Log the message being processed
                         content_preview = message.content[:100] + "..." if len(message.content) > 100 else message.content
                         content_preview = content_preview.replace('\n', ' ')  # Replace newlines for cleaner logs
-                        logger.info(f"   📨 Message {self.messages_analyzed}: {message.author.display_name} in #{channel.name}: \"{content_preview}\"")
+                        logger.debug(f"   📨 Message {self.messages_analyzed}: {message.author.display_name} in #{channel.name}: \"{content_preview}\"")
                         
                         # Add to bot tracker for fragment analysis
                         await self.bot.message_tracker.add_message(message)
@@ -2743,7 +2814,7 @@ class DiscordTrainingDataGenerator:
                 # Log target user message
                 content_preview = message.content[:80] + "..." if len(message.content) > 80 else message.content
                 content_preview = content_preview.replace('\n', ' ')
-                logger.info(f"   🎯 Target user message {target_responses}: \"{content_preview}\"")
+                logger.debug(f"   🎯 Target user message {target_responses}: \"{content_preview}\"")
                 
                 # Look for what they're responding to
                 response_to = await self.find_response_target(message, messages[:i])
@@ -2754,7 +2825,7 @@ class DiscordTrainingDataGenerator:
                         # Log successful training pair creation
                         question_preview = training_pair['question'][:60] + "..." if len(training_pair['question']) > 60 else training_pair['question']
                         answer_preview = training_pair['answer'][:60] + "..." if len(training_pair['answer']) > 60 else training_pair['answer']
-                        logger.info(f"   ✅ Training pair #{len(self.response_pairs) + 1}: Q: \"{question_preview}\" A: \"{answer_preview}\" (confidence: {response_to['confidence']:.2f})")
+                        logger.debug(f"   ✅ Training pair #{len(self.response_pairs) + 1}: Q: \"{question_preview}\" A: \"{answer_preview}\" (confidence: {response_to['confidence']:.2f})")
                         
                         self.response_pairs.append(training_pair)
                 else:
@@ -2914,8 +2985,8 @@ class DiscordTrainingDataGenerator:
         os.makedirs(results_dir, exist_ok=True)
         
         # Create temporary directory for individual files
-        temp_dir = f"/tmp/training_data_{timestamp}"
-        os.makedirs(temp_dir, exist_ok=True)
+        # Private, unpredictable directory (0700) instead of a guessable path under /tmp
+        temp_dir = tempfile.mkdtemp(prefix=f"training_data_{timestamp}_")
         
         logger.info(f"📦 Creating training data files for {safe_username}")
         
@@ -3029,6 +3100,12 @@ class DiscordTrainingDataGenerator:
     
     async def upload_large_file(self, file_path: str, filename: str) -> str:
         """Upload large file to online host and return download link"""
+        # The archive contains other people's messages. Sending it to a public third-party
+        # file host takes it outside Discord, so that only happens when explicitly enabled.
+        if os.getenv('ALLOW_EXTERNAL_UPLOAD', '').strip().lower() not in ('1', 'true', 'yes'):
+            logger.warning(f"📤 External upload is disabled (set ALLOW_EXTERNAL_UPLOAD=true to enable); keeping {filename} locally")
+            return None
+        
         logger.info(f"📤 Uploading large file to online host: {filename}")
         
         try:
@@ -3229,7 +3306,7 @@ class HelpCommands(commands.Cog):
             name="🔐 Authorization Required",
             value=(
                 "• **Administrators**: Always authorized\n"
-                f"• **Owner**: <@{self.bot.authorization_manager.owner_user_id}> (always authorized)\n"
+                f"• **Owner**: {self.bot.authorization_manager.owner_mention()} (always authorized)\n"
                 "• **Others**: Must be authorized by admin (`!!authorize add @user`)"
             ),
             inline=False
@@ -3485,7 +3562,7 @@ class AdminCommands(commands.Cog):
             embed.add_field(
                 name="Notes",
                 value=(
-                    f"• <@{self.bot.authorization_manager.owner_user_id}> is always authorized\n"
+                    f"• Owner ({self.bot.authorization_manager.owner_mention()}) is always authorized\n"
                     "• Administrators are always authorized\n"
                     "• Authorization is required for `!!generatetrainingdata`"
                 ),
